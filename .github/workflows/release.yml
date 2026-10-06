@@ -1,0 +1,84 @@
+# Release after merge, by default: every push to master whose package version has
+# no tag yet becomes a GitHub release and an npm publish of both packages. One
+# workflow on purpose: a release made with GITHUB_TOKEN does not trigger other
+# workflows, so a separate "on: release" publish would never run.
+#
+# To ship: bump "version" in packages/cli/package.json AND packages/mcp/package.json
+# (the check below refuses a mismatch) and merge.
+#
+# NPM_TOKEN is the house automation token (logicsrc vault; expires 2026-10-29).
+name: release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+      - name: Read and check versions
+        id: v
+        run: |
+          CLI=$(node -p "require('./packages/cli/package.json').version")
+          MCP=$(node -p "require('./packages/mcp/package.json').version")
+          if [ "$CLI" != "$MCP" ]; then
+            echo "::error::packages/cli is $CLI but packages/mcp is $MCP; bump both"; exit 1
+          fi
+          echo "version=$CLI" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$CLI" >/dev/null; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"; echo "v$CLI is already released"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require an npm token
+        if: steps.v.outputs.tagged == 'false'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          [ -n "$NPM_TOKEN" ] || { echo "::error::NPM_TOKEN repository secret is not set"; exit 1; }
+
+      # Publish order matters: the MCP package depends on the CLI package.
+      - name: Publish to npm (skips a version already there)
+        if: steps.v.outputs.tagged == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          for dir in packages/cli packages/mcp; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION already on npm"
+            else
+              (cd "$dir" && npm publish --access public --provenance)
+            fi
+          done
+
+      - name: Create the GitHub release
+        if: steps.v.outputs.tagged == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --generate-notes --title "v$VERSION"

@@ -1,0 +1,8 @@
+{
+  "name": "@pwamart/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.js", "./migrate": "./src/migrate.js" },
+  "dependencies": { "@profullstack/orgs": "^0.2.0", "postgres": "^3.4.7" }
+}
