@@ -599,6 +599,34 @@ d('releases, following and feeds', () => {
   const anon0 = (...a) => req(null)(...a);
 });
 
+d('throttle', () => {
+  test('past the allowance an address is refused; open paths and other addresses are not', async () => {
+    const t = await import('../apps/web/src/throttle.js');
+    process.env.THROTTLE_LIMIT = '3';
+    t.resetTrafficGuard();
+    try {
+      const hit = (path, ip) => app.request(path, { headers: { 'x-real-ip': ip } });
+      for (let i = 0; i < 3; i++) expect((await hit('/apps', '203.0.113.9')).status).toBe(200);
+      const over = await hit('/apps', '203.0.113.9');
+      // No COINPAY_X402_KEY in tests, so the fallback answer: 429 with Retry-After.
+      expect([402, 429]).toContain(over.status);
+      expect(over.headers.get('ratelimit-remaining')).toBe('0');
+      expect((await hit('/healthz', '203.0.113.9')).status).toBe(200);
+      expect((await hit('/apps', '203.0.113.10')).status).toBe(200);
+      // Sign-in links are capped per address at 10, whatever the general limit.
+      process.env.THROTTLE_LIMIT = '1000';
+      t.resetTrafficGuard();
+      let last;
+      for (let i = 0; i < 11; i++)
+        last = await app.request('/api/v1/auth/link', { method: 'POST', headers: { 'x-real-ip': '203.0.113.11', 'content-type': 'application/json', authorization: `Bearer junk${i}` }, body: '{}' });
+      expect([402, 429]).toContain(last.status);
+    } finally {
+      delete process.env.THROTTLE_LIMIT;
+      t.resetTrafficGuard();
+    }
+  });
+});
+
 d('listing ads', () => {
   test('every published listing gets one CrawlProof campaign; failures wait a day', async () => {
     const { runListingAds } = await import('../apps/web/src/daemon.js');
