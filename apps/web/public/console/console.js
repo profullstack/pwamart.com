@@ -78,6 +78,13 @@ function errBox(err) {
   return `<p class="err">${esc(err.message)}${err.body?.upgrade ? ` <a href="/console/billing">Upgrade →</a>` : ''}</p>`;
 }
 
+/** After sign-in: console paths route in place; anything else on this site (the CLI's consent page) loads for real. */
+function goNext(next) {
+  const n = next && next.startsWith('/') && !next.startsWith('//') ? next : '/console';
+  if (n.startsWith('/console')) return go(n);
+  location.assign(n);
+}
+
 async function route() {
   const p = location.pathname;
   try {
@@ -87,7 +94,7 @@ async function route() {
     return;
   }
   if (!me && p !== '/signin') return go(`/signin?next=${encodeURIComponent(p + location.search)}`);
-  if (me && p === '/signin') return go(new URLSearchParams(location.search).get('next') || '/console');
+  if (me && p === '/signin') return goNext(new URLSearchParams(location.search).get('next'));
   nav();
   window.scrollTo(0, 0);
   try {
@@ -117,6 +124,10 @@ async function refreshMe() {
 
 function signin() {
   const q = new URLSearchParams(location.search);
+  // Remember where sign-in started across the emailed link (the server reads pm_next).
+  const nx = q.get('next');
+  if (nx && nx.startsWith('/') && !nx.startsWith('//') && !nx.startsWith('/console'))
+    document.cookie = `pm_next=${encodeURIComponent(nx)}; Path=/; Max-Age=1800; SameSite=Lax`;
   view.innerHTML = `<div class="signin">
     <div class="eyebrow">Publisher console</div>
     <h1>Sign in to pwamart</h1>
@@ -147,7 +158,7 @@ function signin() {
       const response = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
       await api('/auth/passkey/login/verify', { method: 'POST', body: { response, challengeId } });
       me = null;
-      go(q.get('next') || '/console');
+      goNext(q.get('next'));
     } catch (err) {
       $('#msg').innerHTML = errBox(err);
     }

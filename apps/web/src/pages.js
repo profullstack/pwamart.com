@@ -550,12 +550,18 @@ export function developersPage({ stats }) {
   <section class="block" id="cli"><h2>CLI &amp; TUI</h2>
     <div class="term">
       <div><span class="p">$</span> curl -fsSL ${e(site)}/install.sh | sh</div>
+      <div><span class="p">$</span> pwamart login              <span class="p"># OAuth 2.1 in your browser; --manual over SSH</span></div>
       <div><span class="p">$</span> pwamart search "markdown editor"</div>
       <div><span class="p">$</span> pwamart info &lt;slug&gt;</div>
       <div><span class="p">$</span> pwamart install &lt;slug&gt;   <span class="p"># opens as an app window, writes a launcher entry</span></div>
       <div><span class="p">$</span> pwamart tui                <span class="p"># the store on hqtui</span></div>
     </div>
     <p>Installs use TronBrowser (<code>tron --app=…</code>) when it is present, otherwise Chrome, Chromium, Edge or Brave in app mode.</p>
+    <p><code>pwamart login</code> opens your browser, you click Allow, and the CLI, the TUI and the MCP server all share that sign-in (refreshed on their own; <code>pwamart logout</code> revokes it). Scripts and CI can still use an API key: <code>PWAMART_API_KEY=pm_live_…</code>.</p>
+    <div class="term">
+      <div><span class="p">$</span> pwamart upgrade            <span class="p"># or: curl -fsSL ${e(site)}/upgrade.sh | sh</span></div>
+      <div><span class="p">$</span> pwamart uninstall          <span class="p"># or: curl -fsSL ${e(site)}/uninstall.sh | sh   (--purge also drops sign-in + launchers)</span></div>
+    </div>
   </section>
   <section class="block" id="mcp"><h2>MCP</h2>
     <div class="term"><div><span class="p">$</span> claude mcp add pwamart -- npx -y @profullstack/pwamart-mcp</div></div>

@@ -7,11 +7,12 @@
     "start": "bun src/main.js"
   },
   "dependencies": {
-    "@simplewebauthn/browser": "^13",
-    "@simplewebauthn/server": "^13.2.0",
+    "@profullstack/auth-system": "^0.7.1",
+    "@profullstack/pwamart-mcp": "workspace:*",
     "@pwamart/db": "workspace:*",
     "@pwamart/payments": "workspace:*",
-    "@profullstack/pwamart-mcp": "workspace:*",
+    "@simplewebauthn/browser": "^13",
+    "@simplewebauthn/server": "^13.2.0",
     "hono": "^4.10.3"
   }
 }

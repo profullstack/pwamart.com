@@ -4,7 +4,7 @@
  * Without DATABASE_URL these tests are skipped (the unit tests still run).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const d = HAS_DB ? describe : describe.skip;
@@ -379,6 +379,72 @@ d('saasrow import + DNS claims', () => {
     // Nobody else can claim it now.
     const hal = req((await keyFor('hal@example.test')).key);
     expect((await hal('POST', `/publishers/${pub.slug}/claim`)).status).toBe(409);
+  });
+});
+
+d('OAuth 2.1 sign-in for the CLI, TUI and MCP', () => {
+  const b64 = (buf) => Buffer.from(buf).toString('base64url');
+  const verifier = b64(randomBytes(48));
+  const challenge = b64(createHash('sha256').update(verifier).digest());
+  const redirect = 'http://127.0.0.1:53999/callback';
+  const q = new URLSearchParams({ response_type: 'code', client_id: 'pwamart-cli', redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state: 'st8', scope: 'read write' });
+  const formPost = (path, body, headers = {}) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams(body).toString() });
+  let cookie, tokens;
+
+  test('discovery metadata and the installer aliases', async () => {
+    const m = await (await app.request('/.well-known/oauth-authorization-server')).json();
+    expect(m).toMatchObject({ issuer: 'http://localhost:3999', code_challenge_methods_supported: ['S256'], grant_types_supported: ['authorization_code', 'refresh_token'] });
+    expect(await (await app.request('/upgrade.sh')).text()).toContain('PWAMART_MODE=${PWAMART_MODE:-upgrade}');
+    expect(await (await app.request('/uninstall.sh')).text()).toContain('PWAMART_MODE=${PWAMART_MODE:-uninstall}');
+  });
+
+  test('signed out: authorize sends you to sign in and back', async () => {
+    const res = await app.request(`/oauth/authorize?${q}`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/signin?next=${encodeURIComponent(`/oauth/authorize?${q}`)}`);
+    // A bad request never reaches sign-in: no PKCE, no page.
+    const bad = new URLSearchParams(q);
+    bad.delete('code_challenge');
+    expect((await app.request(`/oauth/authorize?${bad}`)).status).toBe(400);
+  });
+
+  test('consent -> code -> tokens; the API accepts them', async () => {
+    const link = await auth.createLoginLink('ivy@example.test');
+    const s = await auth.consumeLoginLink(new URL(link).searchParams.get('t'));
+    cookie = `pm_session=${s.sessionId}`;
+    const consent = await app.request(`/oauth/authorize?${q}`, { headers: { cookie } });
+    expect(consent.status).toBe(200);
+    expect(await consent.text()).toContain('ivy@example.test');
+    // Another site cannot submit the consent form.
+    expect((await formPost('/oauth/authorize', { ...Object.fromEntries(q), decision: 'allow' }, { cookie, origin: 'https://evil.example' })).status).toBe(403);
+    const ok = await formPost('/oauth/authorize', { ...Object.fromEntries(q), decision: 'allow' }, { cookie, origin: 'http://localhost:3999' });
+    const back = new URL(ok.headers.get('location'));
+    expect(back.origin + back.pathname).toBe(redirect);
+    expect(back.searchParams.get('state')).toBe('st8');
+    const code = back.searchParams.get('code');
+    const wrong = await formPost('/oauth/token', { grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: 'pwamart-cli', code_verifier: b64(randomBytes(48)) });
+    expect((await wrong.json()).error).toBe('invalid_grant');
+    // That failed attempt spent the code; approve again for a fresh one.
+    const ok2 = await formPost('/oauth/authorize', { ...Object.fromEntries(q), decision: 'allow' }, { cookie });
+    const code2 = new URL(ok2.headers.get('location')).searchParams.get('code');
+    tokens = await (await formPost('/oauth/token', { grant_type: 'authorization_code', code: code2, redirect_uri: redirect, client_id: 'pwamart-cli', code_verifier: verifier })).json();
+    expect(tokens.access_token).toMatch(/^pm_at_/);
+    const me = await req(tokens.access_token)('GET', '/me');
+    expect(me.body.user.email).toBe('ivy@example.test');
+  });
+
+  test('refresh rotates; reuse and revoke end the sign-in', async () => {
+    const r = await (await formPost('/oauth/token', { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: 'pwamart-cli' })).json();
+    expect(r.refresh_token).not.toBe(tokens.refresh_token);
+    expect((await req(r.access_token)('GET', '/me')).status).toBe(200);
+    await formPost('/oauth/revoke', { token: r.refresh_token });
+    expect((await req(r.access_token)('GET', '/me')).status).toBe(401);
+  });
+
+  test('deny goes back with access_denied', async () => {
+    const no = await formPost('/oauth/authorize', { ...Object.fromEntries(q), decision: 'deny' }, { cookie });
+    expect(new URL(no.headers.get('location')).searchParams.get('error')).toBe('access_denied');
   });
 });
 

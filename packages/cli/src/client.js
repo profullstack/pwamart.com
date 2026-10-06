@@ -3,6 +3,7 @@
  * app and the stdio MCP server. Plain fetch, no dependencies: Node 20+ or Bun.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createTokenStore, getAccessToken } from '@profullstack/auth-system/cli';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -24,12 +25,28 @@ export async function saveConfig(patch) {
 }
 
 /** Server and key: flags and environment first, then the saved config. */
+/** The OAuth 2.1 sign-in `pwamart login` saves; shared by the CLI, TUI and stdio MCP. */
+export const tokenStore = () => createTokenStore('pwamart');
+
+/**
+ * Server and credential, first match wins: --key / PWAMART_API_KEY / a saved API
+ * key, then the OAuth sign-in from `pwamart login` (refreshed here when it is
+ * about to expire). Anonymous when there is neither; reads still work.
+ */
 export async function resolveAuth({ server, key } = {}) {
   const saved = await loadConfig();
-  return {
-    server: (server || process.env.PWAMART_URL || saved.server || 'https://pwamart.com').replace(/\/+$/, ''),
-    key: key || process.env.PWAMART_API_KEY || saved.key || '',
-  };
+  const srv = (server || process.env.PWAMART_URL || saved.server || 'https://pwamart.com').replace(/\/+$/, '');
+  let k = key || process.env.PWAMART_API_KEY || saved.key || '';
+  let via = k ? 'api-key' : 'anonymous';
+  if (!k) {
+    const store = tokenStore();
+    const t = await store.load();
+    if (t?.issuer && t.issuer.replace(/\/+$/, '') === srv) {
+      k = (await getAccessToken({ store })) || '';
+      if (k) via = 'oauth';
+    }
+  }
+  return { server: srv, key: k, via };
 }
 
 export class ApiError extends Error {
