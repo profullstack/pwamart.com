@@ -448,6 +448,38 @@ d('OAuth 2.1 sign-in for the CLI, TUI and MCP', () => {
   });
 });
 
+d('listing ads', () => {
+  test('every published listing gets one CrawlProof campaign; failures wait a day', async () => {
+    const { runListingAds } = await import('../apps/web/src/daemon.js');
+    const made = [];
+    const ok = async ({ url, name }) => {
+      made.push(url);
+      return { id: `c${made.length}`, ref: `crawlproof-ad-${made.length}` };
+    };
+    const published = (await db()`select count(*)::int as n from apps where status = 'published'`)[0].n;
+    let total = 0;
+    for (let i = 0; i < 50; i++) {
+      const r = await runListingAds({ batch: 10, createCampaign: ok });
+      total += r.created;
+      if (!r.due) break;
+    }
+    expect(total).toBe(published);
+    expect(new Set(made).size).toBe(made.length);
+    expect(made[0]).toMatch(/^http:\/\/localhost:3999\/apps\//);
+    // Nothing is due any more, so nothing is made twice.
+    expect((await runListingAds({ createCampaign: ok })).due).toBe(0);
+    // A failure is recorded and not retried in the same day.
+    await db()`update apps set listing_ad_id = null where slug = 'notes'`;
+    const boom = async () => {
+      throw new Error('crawlproof down');
+    };
+    expect((await runListingAds({ createCampaign: boom })).created).toBe(0);
+    expect((await runListingAds({ createCampaign: ok })).due).toBe(0);
+    const [row] = await db()`select listing_ad_error from apps where slug = 'notes'`;
+    expect(row.listing_ad_error).toContain('crawlproof down');
+  });
+});
+
 d('billing: periods, upgrades, downgrades, cancel', () => {
   let user, call;
   const DAY = 86400_000;
