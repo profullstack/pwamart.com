@@ -303,3 +303,18 @@ aside .cp-ad { margin: 0; }
 .claim-note { margin-top: 14px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--paper-2); font-size: 14px; color: var(--ink-2); }
 .claim-note a { color: var(--orange-ink); font-weight: 600; text-decoration: none; }
 .pill-unclaimed { display: inline-block; margin-right: 6px; font: 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; background: var(--ink); color: var(--paper); vertical-align: 1px; }
+
+/* Get notified + releases */
+.follow { display: grid; gap: 8px; }
+.follow > .btn { width: 100%; }
+.follow-form { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.follow-email { display: flex; gap: 6px; }
+.follow-email input { flex: 1; min-width: 0; font: 14px var(--sans); padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.follow-form [data-follow-push] { margin-bottom: 8px; }
+.releases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.release { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 6px; }
+.release-head { display: flex; gap: 10px; align-items: center; font: 12px var(--mono); color: var(--muted); }
+.pill-kind { font: 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; border: 1px solid var(--line); }
+.kind-publisher { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.kind-detected { color: var(--orange-ink); border-color: var(--orange); }
+.kind-launched { color: var(--green); border-color: var(--green); }

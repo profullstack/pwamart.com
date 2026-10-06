@@ -10,6 +10,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@profullstack/auth-system": "^0.7.1",
+        "@profullstack/notifications": "^0.1.4",
         "@profullstack/pwamart-mcp": "workspace:*",
         "@profullstack/stack": "^0.4.0",
         "@pwamart/db": "workspace:*",
@@ -21,7 +22,7 @@
     },
     "packages/cli": {
       "name": "@profullstack/pwamart",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "bin": {
         "pwamart": "./bin/pwamart.mjs",
       },
@@ -40,12 +41,12 @@
     },
     "packages/mcp": {
       "name": "@profullstack/pwamart-mcp",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "bin": {
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },
       "dependencies": {
-        "@profullstack/pwamart": "^0.3.0",
+        "@profullstack/pwamart": "^0.3.1",
       },
     },
     "packages/payments": {
@@ -91,6 +92,8 @@
     "@profullstack/form-guard": ["@profullstack/form-guard@0.1.1", "", {}, "sha512-RGLGfQhjq40f+JqEhSmsJnS0I5sFWjYdrYx4VYtkUqz8xvioN2yyR+6uFK0mnDAStKrYytlngg3meUsrChm/OQ=="],
 
     "@profullstack/hqtui": ["@profullstack/hqtui@0.8.0", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-7dLq4Tb/GO7PyUaSRDf86K0AjeD55aBYW2Y7Mb2CM8YEAANno79ey0o9Dzr7QiGz/smJByah+gGp5UdAdDVGrA=="],
+
+    "@profullstack/notifications": ["@profullstack/notifications@0.1.4", "", {}, "sha512-4RSq9C4ghgf/W1YGK6Ai9oMJWWLW2WOSn8cl/J7tbdK/c8nhIr3z3BjQcYJyjGGIMdRuUBGVBAJmp3uAtY28+A=="],
 
     "@profullstack/orgs": ["@profullstack/orgs@0.2.0", "", { "peerDependencies": { "postgres": "^3.4.0" }, "bin": { "orgs": "src/cli.js" } }, "sha512-KYax/CBA4MGIqWennoroPjbsrCthY1iXwvad7YUHUwLwus9FyLDOriRnyLMWjMVCG/pihkDfKALUfdCYFGu+Ng=="],
 

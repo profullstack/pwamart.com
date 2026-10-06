@@ -55,6 +55,8 @@ ${noindex ? '<meta name="robots" content="noindex">' : ''}
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="pwamart">
 <link rel="stylesheet" href="/assets/store.css">
+<link rel="alternate" type="application/rss+xml" title="pwamart: new apps" href="/feed.xml">
+<link rel="alternate" type="application/rss+xml" title="pwamart: app updates" href="/releases.xml">
 <script data-site="${e(config.crawlproof.site)}" src="https://crawlproof.com/stats.js" async></script>
 ${head}
 </head>
@@ -180,6 +182,64 @@ export function claimNote(publisher) {
   return `<div class="claim-note"><span class="pill-unclaimed">Unclaimed</span>
     Imported from a public directory. Do you run <b>${e(publisher.claim_domain)}</b>?
     <a href="/console/claim/${e(publisher.slug)}">Claim it with a DNS record →</a></div>`;
+}
+
+/** "Get notified" for an app or a publisher: email, this browser, or one click when signed in. store.js wires it. */
+export function followButton(kind, slug, name) {
+  return `<div class="follow" data-follow-kind="${e(kind)}" data-follow-slug="${e(slug)}" data-follow-name="${e(name)}">
+    <button class="btn" type="button" data-follow-open>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span data-follow-label>Get notified</span>
+    </button>
+    <form class="follow-form" hidden>
+      <p class="muted" style="margin:0 0 8px;font-size:13.5px">Hear about ${kind === 'publisher' ? `new apps and updates from ${e(name)}` : `updates to ${e(name)}`}.</p>
+      <button class="btn sm dark" type="button" data-follow-push hidden>Notify me in this browser</button>
+      <div class="follow-email"><input type="email" name="email" placeholder="you@example.com" autocomplete="email" aria-label="Email"><button class="btn sm" type="submit">Email me</button></div>
+      <p class="follow-msg muted" style="margin:6px 0 0;font-size:13px"></p>
+    </form>
+  </div>`;
+}
+
+const RELEASE_KIND = { launched: 'New on pwamart', publisher: 'Release', detected: 'Updated' };
+
+export function releaseItem(r) {
+  const when = new Date(r.created_at).toISOString().slice(0, 10);
+  return `<li class="release" id="${e(r.id)}">
+    <div class="release-head"><span class="pill-kind kind-${e(r.kind)}">${RELEASE_KIND[r.kind] ?? r.kind}</span>${r.version ? `<code>${e(r.version)}</code>` : ''}<time datetime="${e(new Date(r.created_at).toISOString())}">${when}</time></div>
+    <b>${e(r.kind === 'launched' ? 'Now on pwamart' : r.title)}</b>
+    ${r.notes ? `<div class="prose" style="font-size:14.5px">${e(r.notes)}</div>` : ''}
+  </li>`;
+}
+
+export function whatsNew(app, releases) {
+  if (!releases.length) return '';
+  return `<section class="whats-new">
+    <div class="block-head" style="margin:36px 0 8px"><h2>What's new</h2><a href="/apps/${e(app.slug)}/releases">All releases →</a></div>
+    <ul class="releases">${releases.map(releaseItem).join('')}</ul>
+  </section>`;
+}
+
+export function releasesPage({ app, releases, stats }) {
+  const body = `<div class="wrap" style="max-width:820px">
+  <section class="block" style="padding-top:44px">
+    <div class="row" style="display:flex;gap:16px;align-items:center">${icon(app, 'icon', 64)}<div><div class="eyebrow">Releases</div><h1 style="font-size:clamp(30px,4.6vw,46px);margin-top:6px">${e(app.name)}</h1></div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 6px;align-items:center">
+      <a class="btn sm" href="/apps/${e(app.slug)}">Back to the app</a>
+      ${followButton('app', app.slug, app.name)}
+      <a class="btn sm" href="/apps/${e(app.slug)}/releases.xml">RSS</a>
+    </div>
+  </section>
+  ${releases.length ? `<ul class="releases">${releases.map(releaseItem).join('')}</ul>` : '<div class="empty">No releases yet.</div>'}
+</div>
+<dialog class="sheet" id="sheet"><div class="sheet-in" id="sheet-in"></div></dialog>`;
+  return layout({
+    title: `${app.name} releases`,
+    description: `What's new in ${app.name}, and how to get notified.`,
+    path: `/apps/${app.slug}/releases`,
+    body,
+    stats,
+    head: `<link rel="alternate" type="application/rss+xml" title="${e(app.name)} releases" href="/apps/${e(app.slug)}/releases.xml">`,
+  });
 }
 
 export function adSlot(placement) {
@@ -326,7 +386,7 @@ const SURFACE_ICONS = {
   bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg>',
 };
 
-export function appPage({ app, publisher, reviews, related, stats }) {
+export function appPage({ app, publisher, reviews, related, releases = [], stats }) {
   const start = safeUrl(app.start_url) || safeUrl(app.url);
   const host = (() => {
     try {
@@ -381,6 +441,7 @@ export function appPage({ app, publisher, reviews, related, stats }) {
       </button>
       <a class="btn" id="open" href="${e(start)}" target="_blank" rel="noopener">Open in browser</a>
       <div class="hint" id="install-hint">Free · works on phone, tablet and desktop</div>
+      ${followButton('app', app.slug, app.name)}
     </div>
   </section>
 
@@ -408,6 +469,8 @@ export function appPage({ app, publisher, reviews, related, stats }) {
         <div class="surface"><span class="glyph">${SURFACE_ICONS.term}</span><div><b>TronBrowser</b><code>tron --app=${e(start)}</code></div></div>
         <div class="surface"><span class="glyph">${SURFACE_ICONS.bot}</span><div><b>Agents</b> · ask any MCP client to “install ${e(app.name)} from pwamart”</div></div>
       </div>
+
+      ${whatsNew(app, releases)}
 
       ${shareBuilder(app)}
 
@@ -457,7 +520,7 @@ export function appPage({ app, publisher, reviews, related, stats }) {
     body,
     stats,
     noindex: app.status !== 'published',
-    head: `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
+    head: `<link rel="alternate" type="application/rss+xml" title="${e(app.name)} releases" href="/apps/${e(app.slug)}/releases.xml"><script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
   });
 }
 
@@ -469,6 +532,7 @@ export function publisherPage({ publisher, list, stats }) {
     <div class="eyebrow">Publisher</div>
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(publisher.name)} ${publisher.verified ? CHECK.replace('class="verified"', 'class="verified" style="width:28px;height:28px"') : ''}</h1>
     ${publisher.claimable ? claimNote(publisher) : publisher.bio ? `<p class="lede">${e(publisher.bio)}</p>` : ''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">${followButton('publisher', publisher.slug, publisher.name)}<a class="btn sm" href="/publishers/${e(publisher.slug)}/feed.xml">RSS</a></div>
     ${safeUrl(publisher.website) ? `<p><a href="${e(safeUrl(publisher.website))}" rel="noopener" target="_blank">${e(publisher.website)}</a></p>` : ''}
   </section>
   <section class="block" style="padding-top:0"><div class="block-head"><h2>${e(list.total)} app${list.total === 1 ? '' : 's'}</h2></div>${grid(list.apps, 'No published apps yet.')}</section>

@@ -89,6 +89,11 @@ export const publish = (auth, slug) => call(auth, `/apps/${encodeURIComponent(sl
 export const featured = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/featured`);
 export const feature = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/feature`, post());
 export const subscribe = (auth, email) => call(auth, '/newsletter/subscribe', post({ email, source: 'cli' }));
+export const releases = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/releases`);
+export const postRelease = (auth, slug, body) => call(auth, `/apps/${encodeURIComponent(slug)}/releases`, post(body));
+export const follow = (auth, body) => call(auth, '/follow', post(body));
+export const follows = (auth) => call(auth, '/me/follows');
+export const unfollow = (auth, id) => call(auth, `/follows/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const refresh = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/refresh`, post());
 export const manage = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/manage`);
 export const createPublisher = (auth, body) => call(auth, '/publishers', post(body));

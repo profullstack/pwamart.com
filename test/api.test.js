@@ -4,7 +4,7 @@
  * Without DATABASE_URL these tests are skipped (the unit tests still run).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, randomBytes } from 'node:crypto';
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const d = HAS_DB ? describe : describe.skip;
@@ -510,6 +510,93 @@ d('Sign in with CoinPay', () => {
     const forged = await app.request('/api/v1/coinpay/callback?code=abc&state=nope', { headers: { cookie: cookieFrom(start, 'pm_cp') } });
     expect(forged.headers.get('location')).toBe('/signin?error=coinpay-state');
   });
+});
+
+d('releases, following and feeds', () => {
+  let rel, pushed;
+  const jwk = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ format: 'jwk' });
+  const raw = (s) => Buffer.from(s, 'base64url');
+
+  test('setup: VAPID keys and a fake push service', async () => {
+    process.env.VAPID_PUBLIC_KEY = Buffer.concat([Buffer.from([4]), raw(jwk.x), raw(jwk.y)]).toString('base64url');
+    process.env.VAPID_PRIVATE_KEY = jwk.d;
+    rel = await import('../apps/web/src/releases.js');
+    pushed = [];
+    rel.setPushSender(async (sub, payload) => {
+      pushed.push({ endpoint: sub.endpoint, payload: JSON.parse(payload) });
+    });
+    expect((await (await app.request('/api/v1/push/vapid-public-key')).json()).publicKey).toBe(process.env.VAPID_PUBLIC_KEY);
+  });
+
+  test('follow an app by account, a publisher by email (double opt-in) and by browser push', async () => {
+    const gus = req((await keyFor('gus2@example.test')).key);
+    const a = await gus('POST', '/follow', { kind: 'app', slug: 'notes' });
+    expect(a.body).toMatchObject({ following: true, confirmed: true });
+    const anon = req(null);
+    const e = await anon('POST', '/follow', { kind: 'publisher', slug: 'alice-apps', email: 'fan@example.test' });
+    expect(e.body.confirmed).toBe(false);
+    const [f] = await db()`select token from follows where email = 'fan@example.test'`;
+    expect((await app.request(`/follow/confirm?t=${f.token}`)).status).toBe(200);
+    const p = await anon('POST', '/follow', {
+      kind: 'app',
+      slug: 'notes',
+      push: { endpoint: 'https://push.example/abc', keys: { p256dh: 'BPk', auth: 'au' } },
+    });
+    expect(p.body.confirmed).toBe(true);
+    const state = await anon('GET', `/follow/state?kind=app&slug=notes&endpoint=${encodeURIComponent('https://push.example/abc')}`);
+    expect(state.body).toMatchObject({ following: true, followers: 2 });
+  });
+
+  test('a publisher release reaches every follower once, by every channel', async () => {
+    await rel.backfillLaunches();
+    await db()`update app_releases set notified_at = now() where kind = 'launched'`;
+    const owner = req((await keyFor('alice@example.test')).key);
+    const r = await owner('POST', '/apps/notes/releases', { version: '2.0', title: 'Dark mode', notes: 'Finally.' });
+    expect(r.status).toBe(201);
+    expect((await anon0('GET', '/apps/notes/releases')).body.releases[0]).toMatchObject({ kind: 'publisher', version: '2.0', title: 'Dark mode' });
+    await rel.queueDeliveries();
+    const out = await rel.sendDeliveries();
+    // gus (email, app follow), fan (email, publisher follow), the browser (push).
+    expect(out.sent).toBe(3);
+    expect(pushed.map((p) => p.payload.title)).toEqual(['notes: Dark mode (2.0)']);
+    // Nothing goes twice.
+    await rel.queueDeliveries();
+    expect((await rel.sendDeliveries()).sent).toBe(0);
+  });
+
+  test('detected: a changed manifest becomes an "Updated" release', async () => {
+    const [n] = await db()`select url, origin from apps where slug = 'todo'`;
+    const report = (icon) => ({ origin: n.origin, url: n.url, manifest: { name: 'todo', description: 'd' }, app: { icon, screenshots: [], startUrl: `${n.origin}/todo/`, display: 'standalone' } });
+    await db()`update apps set release_checked_at = null`;
+    await rel.runReleaseDetect({ batch: 100, inspectFn: async () => report('https://cdn.example/a.png') });
+    await db()`update apps set release_checked_at = null where slug = 'todo'`;
+    const second = await rel.runReleaseDetect({ batch: 100, inspectFn: async () => report('https://cdn.example/b.png') });
+    expect(second.releases).toBeGreaterThanOrEqual(1);
+    const [d] = await db()`select r.title, r.changes from app_releases r join apps a on a.id = r.app_id where a.slug = 'todo' and r.kind = 'detected'`;
+    expect(d.title).toBe('Updated: new icon');
+  });
+
+  test('RSS: new apps, all releases, per app, per publisher', async () => {
+    const feed = await app.request('/feed.xml');
+    expect(feed.headers.get('content-type')).toContain('application/rss+xml');
+    expect(await feed.text()).toContain('<atom:link href="http://localhost:3999/feed.xml" rel="self"');
+    expect(await (await app.request('/releases.xml')).text()).toContain('notes: Dark mode (2.0)');
+    expect(await (await app.request('/apps/notes/releases.xml')).text()).toContain('Finally.');
+    expect(await (await app.request('/publishers/alice-apps/feed.xml')).text()).toContain('Dark mode');
+    const page = await (await app.request('/apps/notes')).text();
+    expect(page).toContain('data-follow-kind="app"');
+    expect(page).toContain("What's new");
+    expect(page).toContain('href="/apps/notes/releases.xml"');
+    expect((await app.request('/apps/notes/releases')).status).toBe(200);
+  });
+
+  test('one-click unsubscribe', async () => {
+    const [f] = await db()`select token from follows where email = 'fan@example.test'`;
+    expect((await app.request(`/follow/unsubscribe?t=${f.token}`)).status).toBe(200);
+    expect((await db()`select 1 from follows where email = 'fan@example.test'`).length).toBe(0);
+  });
+
+  const anon0 = (...a) => req(null)(...a);
 });
 
 d('listing ads', () => {

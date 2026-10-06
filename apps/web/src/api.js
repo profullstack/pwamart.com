@@ -6,10 +6,12 @@ import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { applyPurchase, billingState, currentPlan, quote, setRenew } from './billing.js';
 import { checkClaim, shapeClaim, startClaim } from './imports.js';
+import { follow as followFn } from './releases.js';
+import { vapidKeysFromEnv } from '@profullstack/notifications/server';
 import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
-import { sendLoginLink, sendOrgInvite } from './mail.js';
+import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
 
 /**
@@ -559,6 +561,124 @@ api.delete('/apps/:slug', async (c) => {
   // Removed rather than deleted: the slug stays taken so nobody can squat a known name.
   await db()`update apps set status = 'removed', updated_at = now() where id = ${row.id}`;
   return c.json({ ok: true });
+});
+
+/* -------------------------------------------------- releases + following -- */
+
+const releaseShape = (r) => ({
+  id: r.id,
+  kind: r.kind,
+  version: r.version,
+  title: r.title,
+  notes: r.notes,
+  changes: r.changes ?? [],
+  created_at: r.created_at,
+  ...(r.slug ? { app: { slug: r.slug, name: r.name, icon: r.icon_url } } : {}),
+});
+
+api.get('/apps/:slug/releases', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  const rows = await db()`select * from app_releases where app_id = ${row.id} order by created_at desc limit 50`;
+  return c.json({ app: row.slug, releases: rows.map(releaseShape) });
+});
+
+/** The publisher writes a release ("what's new"); followers are notified. */
+api.post('/apps/:slug/releases', async (c) => {
+  const { user, row } = await appFor(c, c.req.param('slug'));
+  const b = await body(c);
+  const title = str(b.title, 120);
+  if (!title) return c.json({ error: 'title is required' }, 400);
+  const [r] = await db()`
+    insert into app_releases (app_id, kind, version, title, notes, created_by)
+    values (${row.id}, 'publisher', ${str(b.version, 40)}, ${title}, ${str(b.notes, 4000)}, ${user.id})
+    returning *`;
+  if (row.status !== 'published') await db()`update app_releases set notified_at = now() where id = ${r.id}`;
+  return c.json({ release: releaseShape(r) }, 201);
+});
+
+/** Recent releases across the store (the "recently updated" row and feed). */
+api.get('/releases', async (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 30, 1), 100);
+  const rows = await db()`
+    select r.*, a.slug, a.name, a.icon_url from app_releases r join apps a on a.id = r.app_id
+    where a.status = 'published' and r.kind <> 'launched' order by r.created_at desc limit ${limit}`;
+  return c.json({ releases: rows.map(releaseShape) });
+});
+
+async function followTarget(kind, slug) {
+  if (kind === 'publisher') {
+    const [p] = await db()`select id, name from publishers where slug = ${String(slug).toLowerCase()}`;
+    if (!p) fail(404, 'no such publisher');
+    return { id: p.id, name: p.name };
+  }
+  const row = await getApp(slug);
+  if (!row) fail(404, 'no such app');
+  return { id: row.id, name: row.name };
+}
+
+/**
+ * Follow an app or publisher: { kind: 'app'|'publisher', slug, email?, push? }.
+ * Signed in: confirmed now. Email only: a confirmation link is sent. Push: the
+ * browser's own permission prompt is the consent.
+ */
+api.post('/follow', async (c) => {
+  const b = await body(c);
+  const kind = b.kind === 'publisher' ? 'publisher' : 'app';
+  if (!str(b.slug)) return c.json({ error: 'slug is required' }, 400);
+  const target = await followTarget(kind, b.slug);
+  const user = await currentUser(c).catch(() => null);
+  const email = user ? null : str(b.email, 254)?.toLowerCase() ?? null;
+  if (email && !EMAIL.test(email)) return c.json({ error: 'enter a valid email address' }, 400);
+  const r = await followFn({ kind, targetId: target.id, user, email, push: b.push && typeof b.push === 'object' ? b.push : null }).catch((err) =>
+    fail(err.status ?? 500, err.message),
+  );
+  if (r.needsConfirm) {
+    await send({
+      to: email,
+      subject: `Confirm: updates from ${target.name} on pwamart`,
+      text: `Tap to get an email when ${target.name} ships something new on pwamart:\n\n${config.siteUrl}/follow/confirm?t=${r.follow.token}\n\nIf you did not ask for this, ignore it and nothing is sent.`,
+    }).catch((err) => console.error(`[follow] confirm mail: ${err.message}`));
+  }
+  return c.json({ following: true, confirmed: !r.needsConfirm, id: r.follow.id, target: { kind, slug: b.slug, name: target.name } }, 201);
+});
+
+api.get('/me/follows', async (c) => {
+  const user = await requireUser(c);
+  const rows = await db()`
+    select f.id, f.target_kind, f.created_at, f.push_id is not null as push,
+           coalesce(a.slug, p.slug) as slug, coalesce(a.name, p.name) as name
+    from follows f
+    left join apps a on f.target_kind = 'app' and a.id = f.target_id
+    left join publishers p on f.target_kind = 'publisher' and p.id = f.target_id
+    where f.user_id = ${user.id} order by f.created_at desc`;
+  return c.json({ follows: rows });
+});
+
+api.delete('/follows/:id', async (c) => {
+  const user = await requireUser(c);
+  await db()`delete from follows where id::text = ${c.req.param('id')} and user_id = ${user.id}`;
+  return c.json({ ok: true });
+});
+
+/** Is this browser/user following? (for the button state) */
+api.get('/follow/state', async (c) => {
+  const kind = c.req.query('kind') === 'publisher' ? 'publisher' : 'app';
+  const target = await followTarget(kind, c.req.query('slug'));
+  const user = await currentUser(c).catch(() => null);
+  const endpoint = c.req.query('endpoint');
+  const [f] = user
+    ? await db()`select id from follows where target_kind = ${kind} and target_id = ${target.id} and user_id = ${user.id}`
+    : endpoint
+      ? await db()`select f.id from follows f join push_subscriptions p on p.id = f.push_id where f.target_kind = ${kind} and f.target_id = ${target.id} and p.endpoint = ${endpoint}`
+      : [];
+  const [{ n }] = await db()`select count(*)::int as n from follows where target_kind = ${kind} and target_id = ${target.id} and confirmed_at is not null`;
+  return c.json({ following: Boolean(f), id: f?.id ?? null, followers: n, signed_in: Boolean(user) });
+});
+
+api.get('/push/vapid-public-key', (c) => {
+  const keys = vapidKeysFromEnv();
+  return keys ? c.json({ publicKey: keys.publicKey }) : c.json({ error: 'push is not configured' }, 503);
 });
 
 /* ---------------------------------------------------------------- claims -- */

@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/pwamart",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "pwamart from the terminal: search the web-app store, install PWAs as app windows, publish your own, and browse it all in an hqtui TUI.",
   "type": "module",
   "license": "MIT",
