@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { listingName, manifestToken, pickIcon, readHead } from '../apps/web/src/inspect.js';
 import { sharedHost } from '../apps/web/src/shared-hosts.js';
 import { aiBio, pageText, pickLogo } from '../apps/web/src/profile.js';
+import { PUBLISHER_POSTS, publisherPosts } from '../apps/web/src/share-posts.js';
 import { summarizeNetwork } from '../apps/web/src/crawlproof.js';
 import { advertisePage, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
@@ -52,6 +53,23 @@ describe('inspector parsing', () => {
     delete process.env.ANTHROPIC_API_KEY;
     expect(await aiBio({ name: 'Acme', url: 'https://a.example', text: 'Acme makes tools.' })).toBe(null);
     if (key) process.env.ANTHROPIC_API_KEY = key;
+  });
+
+  test('publisher share posts: about 50, all filled, URL last, no em dashes', () => {
+    const url = 'https://pwamart.com/publishers/acme';
+    const withBio = publisherPosts({ name: 'Acme', bio: 'Acme makes tools for writers.', apps: 7, url });
+    expect(withBio.length).toBe(PUBLISHER_POSTS.length);
+    expect(withBio.length).toBeGreaterThanOrEqual(45);
+    expect(new Set(withBio).size).toBe(withBio.length);
+    for (const p of withBio) {
+      expect(p).not.toMatch(/\{\w+\}/);
+      expect(p.endsWith(url)).toBe(true);
+      expect(p).not.toContain('—');
+    }
+    const bare = publisherPosts({ name: 'Acme', bio: null, apps: 1, url });
+    expect(bare.length).toBeLessThan(withBio.length);
+    expect(bare.some((p) => p.includes('reasons'))).toBe(false);
+    expect(bare.some((p) => p.includes('1 apps'))).toBe(false);
   });
 
   test('listingName trims page-title style names', () => {

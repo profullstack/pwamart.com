@@ -263,6 +263,34 @@ if (share) {
   }
 }
 
+// Share (publisher pages): each click copies the next canned post, from a random start,
+// so people sharing the same page do not all post the same words.
+for (const btn of document.querySelectorAll('[data-share-posts]')) {
+  let posts = [];
+  try {
+    posts = JSON.parse(btn.dataset.sharePosts);
+  } catch {}
+  if (!posts.length) continue;
+  let i = Math.floor(Math.random() * posts.length);
+  btn.addEventListener('click', async () => {
+    const text = posts[i];
+    i = (i + 1) % posts.length;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      document.body.append(t);
+      t.select();
+      document.execCommand('copy');
+      t.remove();
+    }
+    btn.textContent = 'Copied! Paste anywhere';
+    clearTimeout(btn._reset);
+    btn._reset = setTimeout(() => (btn.textContent = 'Share'), 1800);
+  });
+}
+
 // "Get notified": follow an app or publisher by account, email or browser push.
 for (const box of document.querySelectorAll('[data-follow-kind]')) {
   const kind = box.dataset.followKind;
