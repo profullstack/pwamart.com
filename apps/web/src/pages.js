@@ -1,4 +1,5 @@
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
+import { publisherPosts } from './share-posts.js';
 
 /**
  * Server-rendered store pages. Plain template strings: every value from the
@@ -536,7 +537,7 @@ export function publisherPage({ publisher, list, stats }) {
     </div>
     ${publisher.verified ? `<p class="muted" style="margin:0 0 10px">Verified publisher${publisher.verified_domain ? `: proved it runs <b>${e(publisher.verified_domain)}</b>` : publisher.verified_by === 'staff' ? ': checked by pwamart staff' : ''}.</p>` : ''}
     ${publisher.claimable ? claimNote(publisher) : publisher.bio ? `<p class="lede">${e(publisher.bio)}</p>` : ''}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">${followButton('publisher', publisher.slug, publisher.name)}<a class="btn sm" href="/publishers/${e(publisher.slug)}/feed.xml">RSS</a></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">${followButton('publisher', publisher.slug, publisher.name)}<a class="btn sm" href="/publishers/${e(publisher.slug)}/feed.xml">RSS</a><button class="btn sm" type="button" data-share-posts="${e(JSON.stringify(publisherPosts({ name: publisher.name, bio: publisher.bio, apps: list.total, url: `${config.siteUrl}/publishers/${publisher.slug}` })))}" title="Copies a ready-made post with the link">Share</button></div>
     ${safeUrl(publisher.website) ? `<p><a href="${e(safeUrl(publisher.website))}" rel="noopener" target="_blank">${e(publisher.website)}</a></p>` : ''}
     ${publisher.claimable ? '' : `<p class="muted" style="font-size:13px">Yours? <a href="/console/publishers/${e(publisher.slug)}">Edit the logo and profile, or verify, in the console →</a></p>`}
   </section>

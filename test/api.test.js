@@ -184,6 +184,8 @@ d('store end to end', () => {
     const page = await (await app.request('/publishers/alice-apps')).text();
     expect(page).toContain('https://cdn.example/logo.png');
     expect(page).toContain('/console/publishers/alice-apps');
+    expect(page).toContain('data-share-posts=');
+    expect(page).toContain('We make notes.');
     expect((await call('PATCH', '/publishers/alice-apps', { avatar_url: '' })).body.publisher.avatar_url).toBe(null);
   });
 
