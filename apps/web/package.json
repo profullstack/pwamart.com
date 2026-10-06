@@ -9,6 +9,7 @@
   "dependencies": {
     "@profullstack/auth-system": "^0.7.1",
     "@profullstack/pwamart-mcp": "workspace:*",
+    "@profullstack/stack": "^0.4.0",
     "@pwamart/db": "workspace:*",
     "@pwamart/payments": "workspace:*",
     "@simplewebauthn/browser": "^13",

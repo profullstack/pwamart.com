@@ -448,6 +448,70 @@ d('OAuth 2.1 sign-in for the CLI, TUI and MCP', () => {
   });
 });
 
+d('Sign in with CoinPay', () => {
+  let cp, claims;
+  const cookieFrom = (res, name) => (res.headers.getSetCookie?.() ?? [res.headers.get('set-cookie')]).map((h) => h?.split(';')[0]).find((h) => h?.startsWith(`${name}=`));
+  async function roundTrip(extraCookie = '') {
+    const start = await app.request('/api/v1/coinpay/login?next=/console/apps');
+    expect(start.status).toBe(302);
+    const auth = new URL(start.headers.get('location'));
+    expect(auth.origin + auth.pathname).toBe('https://coinpayportal.com/api/oauth/authorize');
+    expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
+    const state = auth.searchParams.get('state');
+    const jar = [cookieFrom(start, 'pm_cp'), extraCookie].filter(Boolean).join('; ');
+    return app.request(`/api/v1/coinpay/callback?code=abc&state=${state}`, { headers: { cookie: jar } });
+  }
+
+  test('setup', async () => {
+    process.env.COINPAY_OAUTH_CLIENT_ID = 'cp_test';
+    process.env.COINPAY_OAUTH_CLIENT_SECRET = 'secret';
+    cp = await import('../apps/web/src/coinpay-signin.js');
+    cp.setCoinPayFetch(async (url) => {
+      const u = new URL(url);
+      const json = (b) => new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json' } });
+      if (u.pathname === '/api/oauth/token') return json({ access_token: 'cp_access', token_type: 'Bearer', expires_in: 3600 });
+      if (u.pathname === '/api/oauth/userinfo') return json(claims);
+      return new Response('{}', { status: 404 });
+    });
+  });
+
+  test('a new CoinPay user gets an account and a session; next time, the same one', async () => {
+    claims = { sub: 'did:key:zJack', email: 'jack@example.test', name: 'Jack' };
+    const res = await roundTrip();
+    expect(res.headers.get('location')).toBe('/console/apps');
+    const session = cookieFrom(res, 'pm_session');
+    expect(session).toBeTruthy();
+    const me = await app.request('/api/v1/me', { headers: { cookie: session } });
+    expect((await me.json()).user).toMatchObject({ email: 'jack@example.test', coinpay: true });
+    const again = await roundTrip();
+    const [{ n }] = await db()`select count(*)::int as n from users where coinpay_sub = 'did:key:zJack'`;
+    expect(n).toBe(1);
+    expect(cookieFrom(again, 'pm_session')).toBeTruthy();
+  });
+
+  test('an email that already has an account is not taken over', async () => {
+    claims = { sub: 'did:key:zMallory', email: 'alice@example.test' };
+    const res = await roundTrip();
+    expect(res.headers.get('location')).toBe('/signin?error=coinpay-email-exists');
+    expect(cookieFrom(res, 'pm_session')).toBeFalsy();
+    const [{ coinpay_sub }] = await db()`select coinpay_sub from users where email = 'alice@example.test'`;
+    expect(coinpay_sub).toBeNull();
+  });
+
+  test('a signed-in user connects CoinPay; a forged state is refused', async () => {
+    const link = await auth.createLoginLink('kim@example.test');
+    const s = await auth.consumeLoginLink(new URL(link).searchParams.get('t'));
+    claims = { sub: 'did:key:zKim', email: 'kim@coinpay.example' };
+    const res = await roundTrip(`pm_session=${s.sessionId}`);
+    expect(res.headers.get('location')).toBe('/console/apps');
+    const [{ coinpay_sub }] = await db()`select coinpay_sub from users where email = 'kim@example.test'`;
+    expect(coinpay_sub).toBe('did:key:zKim');
+    const start = await app.request('/api/v1/coinpay/login');
+    const forged = await app.request('/api/v1/coinpay/callback?code=abc&state=nope', { headers: { cookie: cookieFrom(start, 'pm_cp') } });
+    expect(forged.headers.get('location')).toBe('/signin?error=coinpay-state');
+  });
+});
+
 d('listing ads', () => {
   test('every published listing gets one CrawlProof campaign; failures wait a day', async () => {
     const { runListingAds } = await import('../apps/web/src/daemon.js');

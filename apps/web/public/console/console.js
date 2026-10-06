@@ -122,6 +122,15 @@ async function refreshMe() {
 
 /* -------------------------------------------------------------- sign in -- */
 
+const SIGNIN_ERRORS = {
+  'coinpay-email-exists': 'That CoinPay account uses an email that already has a pwamart account. Sign in with the email link below, then connect CoinPay under API keys & passkeys.',
+  'coinpay-denied': 'CoinPay sign-in was cancelled.',
+  'coinpay-state': 'That CoinPay sign-in did not start here. Try again.',
+  'coinpay-expired': 'That CoinPay sign-in took too long. Try again.',
+  'coinpay-failed': 'CoinPay did not complete the sign-in. Try again, or use the email link.',
+  'coinpay-off': 'Sign in with CoinPay is not switched on yet.',
+};
+
 function signin() {
   const q = new URLSearchParams(location.search);
   // Remember where sign-in started across the emailed link (the server reads pm_next).
@@ -133,6 +142,9 @@ function signin() {
     <h1>Sign in to pwamart</h1>
     <p class="muted">No passwords. We email you a link, or use a passkey you saved before.</p>
     ${q.get('error') === 'expired' ? '<p class="err">That link expired or was already used. Send a new one.</p>' : ''}
+    ${SIGNIN_ERRORS[q.get('error')] ? `<p class="err">${SIGNIN_ERRORS[q.get('error')]}</p>` : ''}
+    <a class="btn dark" style="width:100%;margin-bottom:6px" href="/api/v1/coinpay/login?next=${encodeURIComponent(q.get('next') || '/console')}">Continue with CoinPay</a>
+    <div class="or">or</div>
     <form class="stack" id="f">
       <label class="f">Email<input type="email" name="email" required autocomplete="email webauthn" placeholder="you@company.com"></label>
       <button class="btn primary">Email me a sign-in link</button>
@@ -649,6 +661,7 @@ async function claimView(slug) {
 async function keys() {
   const { keys: list } = await api('/keys');
   view.innerHTML = `<div class="page-head"><h1>API keys &amp; passkeys</h1></div>
+    <div class="panel" style="margin-bottom:22px"><h3>CoinPay</h3><p class="muted">${me.user.coinpay ? 'Connected: you can sign in with CoinPay.' : 'Connect your CoinPay account to sign in with it.'}${new URLSearchParams(location.search).get('coinpay') === 'taken' ? ' <span class="err">That CoinPay account is already connected to a different pwamart account.</span>' : ''}</p>${me.user.coinpay ? '' : '<a class="btn sm dark" href="/api/v1/coinpay/login?next=/console/keys">Connect CoinPay</a>'}</div>
     <div class="panel" style="margin-bottom:22px"><h3>Passkeys</h3><p class="muted">${me.user.passkeys ? `You have ${me.user.passkeys} saved.` : 'Sign in with Face ID, Touch ID or a security key next time.'}</p><button class="btn sm dark" id="addpk">Add a passkey</button> <span id="kmsg"></span></div>
     <h2 style="margin-bottom:6px">API keys</h2>
     <p class="muted">For the CLI (<code>pwamart login</code>), the TUI, the desktop app, MCP (<code>PWAMART_API_KEY</code>) and your own scripts.</p>

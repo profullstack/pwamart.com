@@ -11,6 +11,7 @@
       "dependencies": {
         "@profullstack/auth-system": "^0.7.1",
         "@profullstack/pwamart-mcp": "workspace:*",
+        "@profullstack/stack": "^0.4.0",
         "@pwamart/db": "workspace:*",
         "@pwamart/payments": "workspace:*",
         "@simplewebauthn/browser": "^13",
@@ -44,7 +45,7 @@
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },
       "dependencies": {
-        "@profullstack/pwamart": "^0.2.0",
+        "@profullstack/pwamart": "^0.3.0",
       },
     },
     "packages/payments": {
@@ -85,6 +86,10 @@
 
     "@profullstack/auth-system": ["@profullstack/auth-system@0.7.1", "", { "dependencies": { "bcryptjs": "^2.4.3", "jsonwebtoken": "^9.0.2", "uuid": "^11.1.0" }, "peerDependencies": { "@supabase/supabase-js": "^2.49.4", "mongodb": "^6.5.0", "mysql2": "^3.9.2", "pg": "^8.11.3", "pocketbase": "^0.21.1" }, "optionalPeers": ["@supabase/supabase-js", "mongodb", "mysql2", "pg", "pocketbase"] }, "sha512-xtQPnhl7ZKPfQHFLWt8lRN9aiwFMnh4j9diQHQobG9U2RMmDI5nqtHHKNm80Y6P5zZl1FaIf23YjTXe/KofkFw=="],
 
+    "@profullstack/emailer": ["@profullstack/emailer@1.0.3", "", {}, "sha512-VyAtCcfnSI6LOwJvWogCr3ZNmEsaZw+iuWrqnosLsdcKsbRyCrCmXigMNZJZEjlgYlR+lK//PwNPG+xtCFvWAw=="],
+
+    "@profullstack/form-guard": ["@profullstack/form-guard@0.1.1", "", {}, "sha512-RGLGfQhjq40f+JqEhSmsJnS0I5sFWjYdrYx4VYtkUqz8xvioN2yyR+6uFK0mnDAStKrYytlngg3meUsrChm/OQ=="],
+
     "@profullstack/hqtui": ["@profullstack/hqtui@0.8.0", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-7dLq4Tb/GO7PyUaSRDf86K0AjeD55aBYW2Y7Mb2CM8YEAANno79ey0o9Dzr7QiGz/smJByah+gGp5UdAdDVGrA=="],
 
     "@profullstack/orgs": ["@profullstack/orgs@0.2.0", "", { "peerDependencies": { "postgres": "^3.4.0" }, "bin": { "orgs": "src/cli.js" } }, "sha512-KYax/CBA4MGIqWennoroPjbsrCthY1iXwvad7YUHUwLwus9FyLDOriRnyLMWjMVCG/pihkDfKALUfdCYFGu+Ng=="],
@@ -92,6 +97,10 @@
     "@profullstack/pwamart": ["@profullstack/pwamart@workspace:packages/cli"],
 
     "@profullstack/pwamart-mcp": ["@profullstack/pwamart-mcp@workspace:packages/mcp"],
+
+    "@profullstack/referrals": ["@profullstack/referrals@0.1.0", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"] }, "sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg=="],
+
+    "@profullstack/stack": ["@profullstack/stack@0.4.0", "", { "dependencies": { "@profullstack/emailer": "^1.0.1", "@profullstack/form-guard": "^0.1.1", "@profullstack/referrals": "^0.1.0" }, "peerDependencies": { "@supabase/ssr": ">=0.5.0", "next": ">=13.0.0", "react": ">=18.0.0" }, "optionalPeers": ["@supabase/ssr", "next", "react"] }, "sha512-8iQzEiPp9UbrW7qqF5nHZJhQr3lOXQvMDQf+HyMWbZd4uEiYlSaKEbgBpKk7LM4/CADLZPNO10t5ovBqBJ9V9A=="],
 
     "@pwamart/db": ["@pwamart/db@workspace:packages/db"],
 

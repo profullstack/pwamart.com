@@ -82,6 +82,9 @@ export async function linkPeople(user) {
 
 /* ---------------------------------------------------------------- sessions -- */
 
+/** A session for a user another identity provider vouched for (Sign in with CoinPay). */
+export const startSessionFor = (userId, userAgent) => startSession(userId, userAgent);
+
 async function startSession(userId, userAgent) {
   const id = randomBytes(32).toString('base64url');
   await db()`
