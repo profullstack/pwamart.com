@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="135" height="40" viewBox="0 0 135 40" role="img" aria-label="Get it on pwamart">
+  <title>Get it on pwamart</title>
+  <rect x=".5" y=".5" width="134" height="39" rx="6.5" fill="#000" stroke="#a6a6a6"/>
+  <g transform="translate(8 7)">
+    <rect width="26" height="26" rx="6.2" fill="#16211d"/>
+    <ellipse cx="13" cy="13" rx="11" ry="4.3" transform="rotate(-28 13 13)" fill="none" stroke="#f6f4ed" stroke-opacity=".32" stroke-width=".8"/>
+    <rect x="6.5" y="6.5" width="5.7" height="5.7" rx="1.6" fill="#f6f4ed"/>
+    <rect x="6.5" y="13.8" width="5.7" height="5.7" rx="1.6" fill="#f6f4ed"/>
+    <rect x="13.8" y="13.8" width="5.7" height="5.7" rx="1.6" fill="#f6f4ed"/>
+    <rect x="13.8" y="6.5" width="5.7" height="5.7" rx="2.85" fill="#e2582f"/>
+    <path d="M16.65 7.9v2.9M15.2 9.35h2.9" stroke="#16211d" stroke-width=".95" stroke-linecap="round"/>
+  </g>
+  <text x="41" y="16" fill="#fff" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Roboto, Arial, sans-serif" font-size="7.6" letter-spacing=".55">GET IT ON</text>
+  <text x="40.4" y="31.2" fill="#fff" font-family="Georgia, 'Times New Roman', serif" font-size="17.4" letter-spacing="-.2">pwamart<tspan fill="#e2582f">.</tspan></text>
+</svg>
