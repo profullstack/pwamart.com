@@ -203,6 +203,17 @@ d('store end to end', () => {
     expect(sm).not.toContain('/apps/secret');
   });
 
+  test('pages carry CrawlProof tracking and one text-link ad the CSP allows', async () => {
+    const res = await app.request('/apps/notes');
+    const page = await res.text();
+    expect(page).toContain('src="https://crawlproof.com/stats.js"');
+    expect(page.match(/api\/ads\/frame\?slot=/g).length).toBe(1);
+    expect(page).toContain('format=text_link');
+    const csp = res.headers.get('content-security-policy');
+    expect(csp).toContain('frame-src https://crawlproof.com');
+    expect(csp).toContain('script-src \'self\' \'unsafe-inline\' https://crawlproof.com');
+  });
+
   test('page values are escaped', async () => {
     await call('PATCH', '/apps/notes', { summary: '<script>alert(1)</script>' });
     const page = await (await app.request('/apps/notes')).text();

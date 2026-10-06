@@ -19,6 +19,16 @@ export const config = {
       .filter(Boolean);
   },
   session: { cookie: 'pm_session', ttlDays: 30 },
+  // CrawlProof (Profullstack, Inc. org): traffic via stats.js, one text-link ad slot.
+  // Both ids are public (they ship in the page); env overrides for another project.
+  crawlproof: {
+    get site() {
+      return env('CRAWLPROOF_SITE', '64571694-195a-41ae-bce3-b415ec0afb76');
+    },
+    get slot() {
+      return env('CRAWLPROOF_SLOT', '36088096-9570-4417-856c-721de727580c');
+    },
+  },
   mail: {
     get enabled() {
       return Boolean(process.env.RESEND_API_KEY);

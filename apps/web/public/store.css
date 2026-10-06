@@ -276,3 +276,8 @@ footer.foot a:hover { color: var(--ink); }
 
 .surface > div { min-width: 0; overflow-wrap: anywhere; }
 .surface code { overflow-x: auto; max-width: 100%; }
+
+/* CrawlProof text-link ad: one quiet 40px line, never a banner. */
+.cp-ad { margin: 8px 0 24px; }
+.cp-ad iframe { display: block; width: 100%; height: 40px; border: 0; border-radius: 10px; background: transparent; color-scheme: normal; }
+aside .cp-ad { margin: 0; }
