@@ -298,3 +298,8 @@ aside .cp-ad { margin: 0; }
 .post-label { font: 11.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: block; margin-bottom: 6px; }
 #share-post { width: 100%; font: 14.5px/1.5 var(--sans); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); resize: vertical; }
 .share-nets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* Unclaimed (imported) listings */
+.claim-note { margin-top: 14px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--paper-2); font-size: 14px; color: var(--ink-2); }
+.claim-note a { color: var(--orange-ink); font-weight: 600; text-decoration: none; }
+.pill-unclaimed { display: inline-block; margin-right: 6px; font: 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; background: var(--ink); color: var(--paper); vertical-align: 1px; }

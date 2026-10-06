@@ -84,3 +84,20 @@ export async function runReminders() {
 }
 
 addJob('renewal-reminders', 60 * 60_000, runReminders);
+
+// Pending DNS claims: due ones checked every tick; each claim schedules its own next
+// check (15s for its first 10 minutes, then 30s), so the tick only has to be fast.
+addJob('claim-checks', 5_000, async () => {
+  const { runClaimChecks } = await import('./imports.js');
+  await runClaimChecks();
+});
+
+// saasrow.com approved listings -> claimable PWA listings. 150 sites a pass every
+// 20 minutes: the first sweep of the directory takes a few passes, after that a
+// pass only inspects new listings and week-old misses, so it is nearly free.
+addJob('saasrow-import', 20 * 60_000, async () => {
+  if (process.env.SAASROW_IMPORT === 'off') return;
+  const { runSaasrowImport } = await import('./imports.js');
+  const r = await runSaasrowImport();
+  console.log(`[daemon] saasrow-import ${JSON.stringify(r)}`);
+});

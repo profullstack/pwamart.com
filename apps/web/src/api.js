@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { applyPurchase, billingState, currentPlan, quote, setRenew } from './billing.js';
+import { checkClaim, shapeClaim, startClaim } from './imports.js';
 import { categoryCounts, getApp, getPublisher, listApps, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
@@ -536,6 +537,46 @@ api.delete('/apps/:slug', async (c) => {
   // Removed rather than deleted: the slug stays taken so nobody can squat a known name.
   await db()`update apps set status = 'removed', updated_at = now() where id = ${row.id}`;
   return c.json({ ok: true });
+});
+
+/* ---------------------------------------------------------------- claims -- */
+
+/** Claim an imported publisher: answers with the TXT record to add. */
+api.post('/publishers/:slug/claim', async (c) => {
+  const user = await requireUser(c);
+  const r = await startClaim({ user, publisherSlug: c.req.param('slug').toLowerCase() });
+  if (r.error) return c.json({ error: r.error }, r.status);
+  return c.json({ claim: r.claim }, 201);
+});
+
+async function ownClaim(c) {
+  const user = await requireUser(c);
+  const [claim] = await db()`select * from publisher_claims where id::text = ${c.req.param('id')} and user_id = ${user.id}`;
+  if (!claim) fail(404, 'no such claim');
+  const [pub] = await db()`select slug, name from publishers where id = ${claim.publisher_id}`;
+  return { claim, pub };
+}
+
+api.get('/claims/:id', async (c) => {
+  const { claim, pub } = await ownClaim(c);
+  return c.json({ claim: shapeClaim(claim, pub) });
+});
+
+/** Check now instead of waiting for the daemon (at most every 5 seconds). */
+api.post('/claims/:id/check', async (c) => {
+  const { claim, pub } = await ownClaim(c);
+  if (claim.status === 'pending' && (!claim.last_checked_at || Date.now() - new Date(claim.last_checked_at).getTime() > 5000))
+    await checkClaim(claim);
+  const [fresh] = await db()`select * from publisher_claims where id = ${claim.id}`;
+  return c.json({ claim: shapeClaim(fresh, pub) });
+});
+
+api.get('/me/claims', async (c) => {
+  const user = await requireUser(c);
+  const rows = await db()`
+    select pc.*, p.slug as publisher_slug, p.name as publisher_name from publisher_claims pc
+    join publishers p on p.id = pc.publisher_id where pc.user_id = ${user.id} order by pc.created_at desc limit 50`;
+  return c.json({ claims: rows.map((r) => shapeClaim(r, { slug: r.publisher_slug, name: r.publisher_name })) });
 });
 
 /* -------------------------------------------- orgs, teams and projects -- */

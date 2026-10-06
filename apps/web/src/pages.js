@@ -173,6 +173,13 @@ export function shareBuilder(app) {
   </section>`;
 }
 
+/** An imported listing nobody has claimed yet: who can claim it, and how. */
+export function claimNote(publisher) {
+  return `<div class="claim-note"><span class="pill-unclaimed">Unclaimed</span>
+    Imported from a public directory. Do you run <b>${e(publisher.claim_domain)}</b>?
+    <a href="/console/claim/${e(publisher.slug)}">Claim it with a DNS record →</a></div>`;
+}
+
 export function adSlot(placement) {
   const src = `https://crawlproof.com/api/ads/frame?slot=${encodeURIComponent(config.crawlproof.slot)}&format=text_link`;
   return `<div class="cp-ad cp-ad-${e(placement)}"><iframe src="${e(src)}" title="Sponsored" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" scrolling="no"></iframe></div>`;
@@ -355,6 +362,7 @@ export function appPage({ app, publisher, reviews, related, stats }) {
       <h1 style="margin-top:8px">${e(app.name)}</h1>
       <div class="by">by <a href="/publishers/${e(app.publisher.slug)}">${e(app.publisher.name)}</a> ${app.publisher.verified ? CHECK : ''} <span class="muted">· ${e(host)}</span></div>
       ${app.summary ? `<p class="lede" style="margin:12px 0 0;font-size:17px">${e(app.summary)}</p>` : ''}
+      ${app.publisher.claimable ? claimNote(app.publisher) : ''}
       <div class="stats">
         <div><b>${app.rating ? `${Number(app.rating).toFixed(1)} ★` : '–'}</b><span>${e(app.rating_count)} ratings</span></div>
         <div><b>${fmt(app.installs)}</b><span>installs</span></div>
@@ -456,7 +464,7 @@ export function publisherPage({ publisher, list, stats }) {
   <section class="block" style="padding-top:44px">
     <div class="eyebrow">Publisher</div>
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(publisher.name)} ${publisher.verified ? CHECK.replace('class="verified"', 'class="verified" style="width:28px;height:28px"') : ''}</h1>
-    ${publisher.bio ? `<p class="lede">${e(publisher.bio)}</p>` : ''}
+    ${publisher.claimable ? claimNote(publisher) : publisher.bio ? `<p class="lede">${e(publisher.bio)}</p>` : ''}
     ${safeUrl(publisher.website) ? `<p><a href="${e(safeUrl(publisher.website))}" rel="noopener" target="_blank">${e(publisher.website)}</a></p>` : ''}
   </section>
   <section class="block" style="padding-top:0"><div class="block-head"><h2>${e(list.total)} app${list.total === 1 ? '' : 's'}</h2></div>${grid(list.apps, 'No published apps yet.')}</section>
