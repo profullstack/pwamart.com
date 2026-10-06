@@ -55,6 +55,7 @@ ${noindex ? '<meta name="robots" content="noindex">' : ''}
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="pwamart">
 <link rel="stylesheet" href="/assets/store.css">
+<script data-site="${e(config.crawlproof.site)}" src="https://crawlproof.com/stats.js" async></script>
 ${head}
 </head>
 <body>
@@ -95,6 +96,17 @@ ${
 <script src="/assets/store.js" type="module"></script>
 </body>
 </html>`;
+}
+
+/**
+ * One subtle CrawlProof text-link ad. The frame endpoint, not ad.js: it is a
+ * cross-origin document with its own CSP, so ours only needs frame-src, and the
+ * creative follows the reader's light/dark preference itself (no theme param).
+ * text_link is the one fluid format (40px, carries its own "Sponsored" mark).
+ */
+export function adSlot(placement) {
+  const src = `https://crawlproof.com/api/ads/frame?slot=${encodeURIComponent(config.crawlproof.slot)}&format=text_link`;
+  return `<div class="cp-ad cp-ad-${e(placement)}"><iframe src="${e(src)}" title="Sponsored" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" scrolling="no"></iframe></div>`;
 }
 
 export function icon(app, cls = 'icon', size = 58) {
@@ -178,6 +190,7 @@ export function homePage({ featured, top, fresh, counts, stats }) {
 
   <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}</section>
   <section class="block"><div class="block-head"><h2>Top apps</h2><a href="/apps?sort=top">See all →</a></div>${grid(top)}</section>
+  ${adSlot('home')}
   <section class="block"><div class="block-head"><h2>New this week</h2><a href="/apps?sort=new">See all →</a></div>${grid(fresh)}</section>
 
   <section class="block">
@@ -215,6 +228,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
   <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
+  ${list.apps.length ? adSlot('browse') : ''}
   <div class="pager">
     ${offset > 0 ? `<a class="btn" href="${e(qs(Math.max(0, offset - limit)))}">← Previous</a>` : ''}
     ${offset + limit < list.total ? `<a class="btn" href="${e(qs(offset + limit))}">Next →</a>` : ''}
@@ -347,6 +361,7 @@ export function appPage({ app, publisher, reviews, related, stats }) {
           ? `<div class="panel"><h3>${e(publisher.name)} ${publisher.verified ? CHECK : ''}</h3>${publisher.bio ? `<p class="muted" style="margin:0 0 8px;font-size:14px">${e(publisher.bio)}</p>` : ''}<a href="/publishers/${e(publisher.slug)}">More from this publisher →</a></div>`
           : ''
       }
+      ${adSlot('app')}
     </aside>
   </div>
   ${related.length ? `<section class="block"><div class="block-head"><h2>More in ${e(app.category_name)}</h2></div>${grid(related)}</section>` : ''}
