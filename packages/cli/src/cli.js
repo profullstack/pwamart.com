@@ -12,7 +12,8 @@ import { installApp } from './install.js';
 const HELP = `pwamart: find and install web apps (PWAs) on any device.
 
 Browse
-  pwamart search [query] [--category C] [--sort top|new|rating] [--json]
+  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--json]
+  pwamart browse [--category C] [--offline]   the same list; --offline: only apps that work offline
   pwamart info <slug> [--json]
   pwamart install <slug> [--no-launch]   open it as an app window + add a launcher entry
   pwamart uninstall <slug>               remove the launcher entry
@@ -79,7 +80,7 @@ export function formatList(r) {
   if (!r.apps.length) return 'No apps found.';
   const w = Math.min(28, Math.max(...r.apps.map((a) => a.slug.length)));
   const lines = r.apps.map(
-    (a) => `${a.slug.padEnd(w)}  ${a.name.slice(0, 30).padEnd(30)}  ${stars(a.rating).padEnd(6)}  ${String(a.installs).padStart(6)} ↓  ${a.publisher.name}`,
+    (a) => `${a.slug.padEnd(w)}  ${a.name.slice(0, 30).padEnd(30)}  ${stars(a.rating).padEnd(6)}  ${String(a.installs).padStart(6)} ↓  ${a.offline ? 'offline  ' : ''}${a.publisher.name}`,
   );
   return `${lines.join('\n')}\n\n${r.total} app${r.total === 1 ? '' : 's'}${r.total > r.apps.length ? ` (showing ${r.apps.length})` : ''} · pwamart install <slug>`;
 }
@@ -95,6 +96,7 @@ export function formatApp({ app, publisher }, server = "https://pwamart.com") {
     `URL       ${app.start_url}`,
     `Page      ${server}/apps/${app.slug}`,
     `Score     ${app.score ?? '–'}%  ${req.map((c) => `${c.ok ? '✓' : '✕'} ${c.label}`).join('  ')}`,
+    `Offline   ${app.offline ? 'yes' : app.offline_reason ? `no (${app.offline_reason})` : '–'}`,
     `iOS       ${server}/apps/${app.slug}/install.mobileconfig`,
     `Install   pwamart install ${app.slug}`,
   ].join('\n');
@@ -127,8 +129,10 @@ export async function main(argv = process.argv.slice(2)) {
       return h.ok ? 0 : 1;
     }
     case 'search':
+    case 'browse':
     case 'ls': {
-      const r = await api.search(auth, { q: rest.join(' ') || undefined, category: flags.category, sort: flags.sort, limit: flags.limit ?? 20 });
+      const feature = flags.offline === true || flags.offline === 'true' ? 'offline' : typeof flags.feature === 'string' ? flags.feature : undefined;
+      const r = await api.search(auth, { q: rest.join(' ') || undefined, category: flags.category, sort: flags.sort, feature, limit: flags.limit ?? 20 });
       out(r, formatList(r));
       return 0;
     }

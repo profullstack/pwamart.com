@@ -8,9 +8,9 @@ import { applyPurchase, billingState, currentPlan, quote, setRenew } from './bil
 import { checkClaim, shapeClaim, startClaim } from './imports.js';
 import { follow as followFn } from './releases.js';
 import { vapidKeysFromEnv } from '@profullstack/notifications/server';
-import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
+import { FEATURES, PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureKey, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
-import { InspectError, inspect, verifyOrigin } from './inspect.js';
+import { InspectError, featureColumns, inspect, verifyOrigin } from './inspect.js';
 import { sharedHost } from './shared-hosts.js';
 import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
@@ -257,12 +257,16 @@ api.get('/plans', (c) =>
 
 api.get('/apps', async (c) => {
   const q = c.req.query();
+  const raw = q.feature || (q.offline === '1' || q.offline === 'true' ? 'offline' : null);
+  const feature = featureKey(raw);
+  if (raw && !feature) return c.json({ error: `unknown feature; one of: ${Object.keys(FEATURES).join(', ')}` }, 400);
   return c.json(
     await listApps({
       q: q.q,
       category: q.category,
       publisher: q.publisher,
       featured: q.featured === '1' || q.featured === 'true',
+      feature,
       sort: q.sort,
       limit: q.limit,
       offset: q.offset,
@@ -483,6 +487,7 @@ function fromReport(r) {
     background_color: r.app.backgroundColor,
     display: r.app.display,
     check_report: sql.json({ installable: r.installable, score: r.score, checks: r.checks }),
+    ...featureColumns(r),
   };
 }
 

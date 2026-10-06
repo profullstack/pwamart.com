@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/pwamart-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "MCP server for pwamart.com: search the web-app store, get install steps for any platform, and submit and publish your PWAs from any MCP client.",
   "type": "module",
   "license": "MIT",

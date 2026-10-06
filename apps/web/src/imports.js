@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
 import { db, orgs } from '@pwamart/db';
 import { config } from './config.js';
-import { inspect, verifyOrigin } from './inspect.js';
+import { featureColumns, inspect, verifyOrigin } from './inspect.js';
 import { sharedHost } from './shared-hosts.js';
 import { sendClaimVerified } from './mail.js';
 
@@ -184,6 +184,7 @@ export async function importProduct(product, { source = 'saasrow', inspectFn = i
         status: 'published',
         verify_token: randomBytes(12).toString('hex'),
         check_report: sqlj.json({ installable: report.installable, score: report.score, checks: report.checks }),
+        ...featureColumns(report),
         checked_at: new Date(),
         published_at: new Date(),
         source,

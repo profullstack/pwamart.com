@@ -6,6 +6,7 @@
 curl -fsSL https://pwamart.com/install.sh | sh     # or: npm i -g @profullstack/pwamart
 
 pwamart search notes
+pwamart browse --offline    # only apps whose service worker works offline
 pwamart info <slug>
 pwamart install <slug>      # opens it as an app window, writes a launcher entry (Linux)
 pwamart tui                 # the whole store in your terminal, on hqtui

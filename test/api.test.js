@@ -18,8 +18,15 @@ function fixturePage(name, { manifest = true } = {}) {
   ${manifest ? `<link rel="manifest" href="/${name}/manifest.json">` : ''}
   <meta name="description" content="${name} does things">
   <meta name="theme-color" content="#123456">
-  <script>navigator.serviceWorker.register('/sw.js')</script></head><body>${name}</body></html>`;
+  <script>navigator.serviceWorker.register('/${name}/sw.js')</script></head><body>${name}</body></html>`;
 }
+
+// notes works offline (a fetch handler answering from caches); todo's worker only passes requests through.
+const FIXTURE_SW = {
+  notes: `self.addEventListener('install', (e) => e.waitUntil(caches.open('v1').then((c) => c.addAll(['/notes/']))));
+self.addEventListener('fetch', (e) => e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request))));`,
+  todo: `self.addEventListener('fetch', (e) => e.respondWith(fetch(e.request)));`,
+};
 
 beforeAll(async () => {
   if (!HAS_DB) return;
@@ -64,6 +71,10 @@ beforeAll(async () => {
             { src: `/${name}/i512.png`, sizes: '512x512', type: 'image/png' },
           ],
         });
+      if (file === 'sw.js')
+        return FIXTURE_SW[name]
+          ? new Response(FIXTURE_SW[name], { headers: { 'content-type': 'text/javascript' } })
+          : new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
       if (file?.endsWith('.png')) return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]), { headers: { 'content-type': 'image/png' } });
       fixtureApps.set(name, true);
       return new Response(fixturePage(name), { headers: { 'content-type': 'text/html' } });
@@ -227,6 +238,48 @@ d('store end to end', () => {
     expect(one.body.app.links.ios_profile).toBe('/apps/notes/install.mobileconfig');
     const cats = await anon('GET', '/categories');
     expect(cats.body.categories.find((c) => c.slug === 'utilities').apps).toBe(1);
+  });
+
+  test('works offline: detected on submit, filterable by ?feature=offline, shown on the pages', async () => {
+    const notes = await anon('GET', '/apps/notes');
+    expect(notes.body.app.features).toEqual(['offline']);
+    expect(notes.body.app.offline).toBe(true);
+    expect(notes.body.app.offline_reason).toBe('fetch+cache');
+    expect(notes.body.app.checks.find((c) => c.id === 'offline').ok).toBe(true);
+    const todo = await anon('GET', '/apps/todo');
+    expect(todo.body.app.features).toEqual([]);
+    expect(todo.body.app.offline_reason).toBe('fetch handler without a cache');
+    expect(todo.body.app.checks.find((c) => c.id === 'offline').ok).toBe(false);
+
+    const off = await anon('GET', '/apps?feature=offline');
+    expect(off.body.apps.map((a) => a.slug)).toEqual(['notes']);
+    expect(off.body.total).toBe(1);
+    expect((await anon('GET', '/apps?offline=1')).body.apps.map((a) => a.slug)).toEqual(['notes']);
+    expect((await anon('GET', '/apps?feature=offline&category=utilities')).body.total).toBe(0);
+    expect((await anon('GET', '/apps?feature=teleport')).status).toBe(400);
+
+    const browse = await (await app.request('/apps?feature=offline&sort=new')).text();
+    expect(browse).toContain('data-feature="offline"');
+    expect(browse).toContain('Web apps that work offline');
+    expect(browse).toContain('href="/apps/notes"');
+    expect(browse).not.toContain('href="/apps/todo"');
+    expect(browse).toContain('class="chip on" data-feature="offline" href="/apps?sort=new"'); // the toggle turns it off and keeps sort
+    const all = await (await app.request('/apps?category=productivity&q=notes')).text();
+    expect(all).toContain('data-feature="offline" href="/apps?q=notes&amp;category=productivity&amp;feature=offline"');
+    expect(await (await app.request('/')).text()).toContain('href="/apps?feature=offline"');
+    expect(await (await app.request('/apps/notes')).text()).toContain('Works offline');
+    expect(await (await app.request('/apps/todo')).text()).not.toContain('class="tag offline"');
+  });
+
+  test('the backfill tags listings never checked for features, a few at a time', async () => {
+    const sql = db();
+    await sql`update apps set features = '{}', offline_reason = null, features_checked_at = null where slug in ('notes', 'todo')`;
+    expect((await anon('GET', '/apps?feature=offline')).body.total).toBe(0);
+    const { runFeatureBackfill } = await import('../apps/web/src/daemon.js');
+    const r = await runFeatureBackfill({ batch: 10 });
+    expect(r.offline).toBe(1);
+    expect((await anon('GET', '/apps?feature=offline')).body.apps.map((a) => a.slug)).toEqual(['notes']);
+    expect((await runFeatureBackfill()).checked).toBe(0);
   });
 
   test('another account cannot touch the app', async () => {

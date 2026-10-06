@@ -266,27 +266,35 @@ export function card(app) {
     <div class="by">${e(app.publisher.name)} ${app.publisher.verified ? CHECK : ''}</div>
     <div class="sum">${e(app.summary ?? '')}</div>
     <div class="meta"><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
+    ${app.offline ? OFFLINE_TAG : ''}
   </div>
 </a>`;
 }
+
+/** The small "Works offline" tag on cards and the details page. */
+export const OFFLINE_TAG = '<span class="tag offline" title="Its service worker answers from a cache, so it opens without a connection">Works offline</span>';
 
 export function grid(apps, emptyText = 'No apps here yet.') {
   if (!apps.length) return `<div class="empty">${e(emptyText)} <a href="/console/submit">Submit one</a>.</div>`;
   return `<div class="grid">${apps.map(card).join('')}</div>`;
 }
 
-function categoryChips(counts, active) {
+function categoryChips(counts, active, keep = {}) {
+  const href = (category) => {
+    const p = new URLSearchParams({ ...(category ? { category } : {}), ...keep });
+    return p.size ? `/apps?${p}` : '/apps';
+  };
   return `<div class="chips">
-  <a class="chip${active ? '' : ' on'}" href="/apps">All</a>
+  <a class="chip${active ? '' : ' on'}" href="${e(href(null))}">All</a>
   ${CATEGORIES.filter(([slug]) => counts[slug] || slug === active)
-    .map(([slug, name]) => `<a class="chip${slug === active ? ' on' : ''}" href="/apps?category=${slug}">${e(name)} <small>${counts[slug] ?? 0}</small></a>`)
+    .map(([slug, name]) => `<a class="chip${slug === active ? ' on' : ''}" href="${e(href(slug))}">${e(name)} <small>${counts[slug] ?? 0}</small></a>`)
     .join('')}
 </div>`;
 }
 
 /* --------------------------------------------------------------- home -- */
 
-export function homePage({ featured, top, fresh, counts, stats }) {
+export function homePage({ featured, top, fresh, counts, stats, features = {} }) {
   const tints = ['#e5eadb', '#f3e2d6', '#e1e6ee', '#efe6cf'];
   const body = `
 <div class="wrap">
@@ -327,7 +335,8 @@ export function homePage({ featured, top, fresh, counts, stats }) {
       : ''
   }
 
-  <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}</section>
+  <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}
+    <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a></div></section>
   <section class="block"><div class="block-head"><h2>Top apps</h2><a href="/apps?sort=top">See all →</a></div>${grid(top)}</section>
   ${adSlot('home')}
   <section class="block"><div class="block-head"><h2>New this week</h2><a href="/apps?sort=new">See all →</a></div>${grid(fresh)}</section>
@@ -348,25 +357,30 @@ export function homePage({ featured, top, fresh, counts, stats }) {
 
 /* ------------------------------------------------------------- browse -- */
 
-export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null }) {
-  const title = publisher ? `Apps by ${publisher.name}` : q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
-  const qs = (o) => {
+export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null, feature = null, features = {} }) {
+  const base = publisher ? `Apps by ${publisher.name}` : q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
+  const title = feature === 'offline' ? (q || category || publisher ? `${base} · works offline` : 'Web apps that work offline') : base;
+  const qs = (o, { feat = feature } = {}) => {
     const p = new URLSearchParams();
     if (q) p.set('q', q);
     if (category) p.set('category', category);
     if (publisher) p.set('publisher', publisher.slug);
     if (sort) p.set('sort', sort);
+    if (feat) p.set('feature', feat);
     if (o) p.set('offset', o);
     return `/apps?${p}`;
   };
+  const keep = { ...(publisher ? { publisher: publisher.slug } : {}), ...(sort ? { sort } : {}), ...(feature ? { feature } : {}) };
+  const offlineChip = `<div class="chips" style="margin-top:12px"><a class="chip${feature === 'offline' ? ' on' : ''}" data-feature="offline" href="${e(qs(0, { feat: feature === 'offline' ? null : 'offline' }))}">${feature === 'offline' ? '✕ ' : ''}Works offline <small>${e(features.offline ?? 0)}</small></a></div>`;
   const sorts = [['top', 'Top'], ['new', 'Newest'], ['rating', 'Top rated'], ['name', 'A–Z']];
   const body = `<div class="wrap">
   <section class="block" style="padding-top:40px">
     <div class="eyebrow">${e(list.total)} result${list.total === 1 ? '' : 's'}</div>
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 22px">${e(title)}</h1>
     ${publisher ? `<div class="chips" style="margin-bottom:12px"><a class="chip on" href="/publishers/${e(publisher.slug)}">${e(publisher.name)}</a><a class="chip" href="/apps">✕ all publishers</a><a class="chip" href="/publishers">Browse publishers →</a></div>` : ''}
-    ${categoryChips(counts, category)}
-    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
+    ${categoryChips(counts, category, keep)}
+    ${offlineChip}
+    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), ...(feature ? { feature } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
   <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
   ${list.apps.length ? adSlot('browse') : ''}
@@ -375,7 +389,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${offset + limit < list.total ? `<a class="btn" href="${e(qs(offset + limit))}">Next →</a>` : ''}
   </div>
 </div>`;
-  return layout({ title, path: '/apps', body, stats, noindex: Boolean(q) });
+  return layout({ title, path: feature ? `/apps?feature=${feature}` : '/apps', body, stats, noindex: Boolean(q) });
 }
 
 /* ------------------------------------------------------------ details -- */
@@ -426,6 +440,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       <div class="eyebrow"><a href="/apps?category=${e(app.category)}" style="text-decoration:none">${e(app.category_name)}</a>${app.featured ? ' · <a href="/featured" style="text-decoration:none;color:#e2582f">★ Featured</a>' : ''}</div>
       <h1 style="margin-top:8px">${e(app.name)}</h1>
       <div class="by">by <a href="/publishers/${e(app.publisher.slug)}">${e(app.publisher.name)}</a> ${app.publisher.verified ? CHECK : ''} <span class="muted">· ${e(host)}</span></div>
+      ${app.offline ? `<div style="margin-top:8px"><a href="/apps?feature=offline" style="text-decoration:none">${OFFLINE_TAG}</a></div>` : ''}
       ${app.summary ? `<p class="lede" style="margin:12px 0 0;font-size:17px">${e(app.summary)}</p>` : ''}
       ${app.publisher.claimable ? claimNote(app.publisher) : ''}
       <div class="stats">
@@ -491,6 +506,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
           <dt>Website</dt><dd><a href="${e(safeUrl(app.origin))}" rel="noopener" target="_blank">${e(host)}</a></dd>
           <dt>Category</dt><dd>${e(app.category_name)}</dd>
           <dt>Opens as</dt><dd>${e(app.display ?? 'browser')}</dd>
+          <dt>Offline</dt><dd>${app.offline ? 'Works offline' : app.offline_reason && !app.offline_reason.startsWith('not checked') ? `No (${e(app.offline_reason)})` : '–'}</dd>
           <dt>Price</dt><dd>Free to install</dd>
           ${app.updated_at ? `<dt>Checked</dt><dd>${e(new Date(app.checked_at ?? app.updated_at).toISOString().slice(0, 10))}</dd>` : ''}
           <dt>Manifest</dt><dd>${app.manifest_url ? `<a href="${e(safeUrl(app.manifest_url))}" rel="noopener nofollow" target="_blank">view</a>` : '–'}</dd>

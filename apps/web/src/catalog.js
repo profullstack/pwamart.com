@@ -9,7 +9,7 @@ import { CATEGORY_NAMES } from './config.js';
 const PUBLIC_FIELDS = (sql) => sql`
   a.id, a.slug, a.name, a.summary, a.description, a.url, a.origin, a.start_url, a.manifest_id,
   a.manifest_url, a.icon_url, a.screenshots, a.theme_color, a.background_color, a.display,
-  a.category, a.tags, a.status, a.featured, a.installs, a.rating_count,
+  a.category, a.tags, a.features, a.offline_reason, a.status, a.featured, a.installs, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
   a.verified_at is not null as verified, a.check_report, a.checked_at, a.published_at, a.updated_at,
   p.slug as publisher_slug, p.name as publisher_name, p.avatar_url as publisher_avatar, p.verified as publisher_verified, p.claimable as publisher_claimable, p.claim_domain as publisher_claim_domain`;
@@ -35,6 +35,9 @@ export function shape(row) {
     category: row.category,
     category_name: CATEGORY_NAMES[row.category] ?? row.category,
     tags: row.tags ?? [],
+    features: row.features ?? [],
+    offline: (row.features ?? []).includes('offline'),
+    offline_reason: row.offline_reason ?? null,
     status: row.status,
     featured: row.featured,
     installs: row.installs,
@@ -63,8 +66,23 @@ const SORTS = {
   name: (sql) => sql`lower(a.name)`,
 };
 
+/** What the inspector can detect about an app, filterable everywhere as `feature=<key>`. */
+export const FEATURES = { offline: 'Works offline' };
+export const featureKey = (v) => (v && Object.hasOwn(FEATURES, String(v)) ? String(v) : null);
+
+/** Published apps per feature: { offline: 42 }. */
+export async function featureCounts() {
+  const sql = db();
+  const out = {};
+  for (const k of Object.keys(FEATURES)) {
+    const [r] = await sql`select count(*)::int as n from apps where status = 'published' and features @> array[${k}]::text[]`;
+    out[k] = r.n;
+  }
+  return out;
+}
+
 /** Published apps, searchable. `q` is websearch syntax, so raw input never errors. */
-export async function listApps({ q, category, publisher, featured, sort = 'top', limit = 24, offset = 0 } = {}) {
+export async function listApps({ q, category, publisher, featured, feature, sort = 'top', limit = 24, offset = 0 } = {}) {
   const sql = db();
   const lim = Math.min(Math.max(Number(limit) || 24, 1), 100);
   const off = Math.max(Number(offset) || 0, 0);
@@ -79,6 +97,7 @@ export async function listApps({ q, category, publisher, featured, sort = 'top',
       ${category ? sql`and a.category = ${category}` : sql``}
       ${publisher ? sql`and p.slug = ${publisher}` : sql``}
       ${featured ? sql`and a.featured` : sql``}
+      ${feature ? sql`and a.features @> array[${String(feature)}]::text[]` : sql``}
       ${
         query
           ? sql`and (to_tsvector('english', coalesce(a.name, '') || ' ' || coalesce(a.summary, '') || ' ' || coalesce(a.description, ''))

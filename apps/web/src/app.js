@@ -8,7 +8,7 @@ import * as auth from './auth.js';
 import { getCookie } from 'hono/cookie';
 import { mountOAuth } from './oauth.js';
 import { mountCoinPaySignin } from './coinpay-signin.js';
-import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
+import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, featureKey, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
@@ -80,14 +80,15 @@ const html = (c, body, status = 200) => c.html(body, status, { 'cache-control': 
 /* ---------------------------------------------------------------- pages -- */
 
 app.get('/', async (c) => {
-  const [featured, top, fresh, counts, s] = await Promise.all([
+  const [featured, top, fresh, counts, features, s] = await Promise.all([
     listApps({ featured: true, limit: 4 }),
     listApps({ sort: 'top', limit: 12 }),
     listApps({ sort: 'new', limit: 8 }),
     categoryCounts(),
+    featureCounts(),
     stats(),
   ]);
-  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, stats: s }));
+  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, stats: s }));
 });
 
 app.get('/apps', async (c) => {
@@ -97,12 +98,14 @@ app.get('/apps', async (c) => {
   const offset = Math.max(0, Number(c.req.query('offset')) || 0);
   const limit = 24;
   const publisher = c.req.query('publisher') ? await getPublisher(c.req.query('publisher')) : null;
-  const [list, counts, s] = await Promise.all([
-    listApps({ q, category, publisher: publisher?.slug, sort: sort ?? 'top', limit, offset }),
+  const feature = featureKey(c.req.query('feature')) ?? (c.req.query('offline') === '1' ? 'offline' : null);
+  const [list, counts, features, s] = await Promise.all([
+    listApps({ q, category, publisher: publisher?.slug, feature, sort: sort ?? 'top', limit, offset }),
     categoryCounts(),
+    featureCounts(),
     stats(),
   ]);
-  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher }));
+  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher, feature, features }));
 });
 
 app.get('/publishers', async (c) => {
@@ -492,6 +495,7 @@ app.get('/sitemap.xml', async (c) => {
     u('/publishers'),
     u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
+    u('/apps?feature=offline'),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
     ...pubs.map((p) => u(`/publishers/${p.slug}`)),
   ].join('');
@@ -511,7 +515,7 @@ Unlimited $199/year (unlimited publishers and apps, shared orgs, teams, projects
 
 ## API (${config.siteUrl}/api/v1)
 Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one in the console under API keys).
-- GET  /apps?q=&category=&publisher=&sort=top|new|rating|name&limit=&offset=
+- GET  /apps?q=&category=&publisher=&feature=offline&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
 - GET  /apps/:slug                         details, publisher, reviews
 - POST /apps/:slug/installs {method}       count an install
 - GET  /categories, GET /plans, GET /publishers?q=&filter=all|claimed|imported|verified&sort=apps|name|new, GET /publishers/:slug
