@@ -20,9 +20,13 @@ Browse
   pwamart categories
   pwamart tui                            the store in your terminal (hqtui)
 
-Publish (needs an API key from pwamart.com/console/keys)
-  pwamart login [KEY]
+Account (OAuth 2.1: opens your browser, no keys to paste)
+  pwamart login [--manual]               sign in; --manual prints a URL + asks for a code (SSH)
+  pwamart login --key pm_live_…          or use an API key from pwamart.com/console/keys
+  pwamart logout                         revoke this sign-in and forget it
   pwamart whoami
+
+Publish
   pwamart publisher <name> [--slug S] [--website URL]
   pwamart check <url>                    grade any URL's installability
   pwamart submit <url> --publisher <slug> [--category C]
@@ -32,7 +36,13 @@ Publish (needs an API key from pwamart.com/console/keys)
   pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
 
+  pwamart upgrade | update               install the latest pwamart
+  pwamart uninstall | remove             remove pwamart itself (with no <slug>)
   pwamart health | version
+
+Install:  curl -fsSL https://pwamart.com/install.sh | sh
+Upgrade:  curl -fsSL https://pwamart.com/upgrade.sh | sh
+Remove:   curl -fsSL https://pwamart.com/uninstall.sh | sh
 
 Environment: PWAMART_API_KEY, PWAMART_URL, PWAMART_BROWSER.`;
 
@@ -138,7 +148,13 @@ export async function main(argv = process.argv.slice(2)) {
     }
     case 'uninstall':
     case 'remove': {
-      if (!rest[0]) throw new Error('usage: pwamart uninstall <slug>');
+      if (!rest[0]) {
+        const { spawnSync } = await import('node:child_process');
+        const { logout } = await import('@profullstack/auth-system/cli');
+        await logout({ store: api.tokenStore() }).catch(() => {});
+        const r = spawnSync('sh', ['-c', `curl -fsSL ${auth.server}/install.sh | sh -s -- --uninstall${flags.purge ? ' --purge' : ''}`], { stdio: 'inherit' });
+        return r.status ?? 1;
+      }
       const file = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'applications', `pwamart-${rest[0]}.desktop`);
       await rm(file, { force: true });
       console.log(`✓ removed ${file}`);
@@ -156,18 +172,41 @@ export async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     case 'login': {
-      let key = rest[0];
-      if (!key) {
-        process.stderr.write(`Create a key at ${auth.server}/console/keys\n`);
-        const rl = createInterface({ input: process.stdin, output: process.stderr });
-        key = (await rl.question('API key: ')).trim();
-        rl.close();
+      const key = typeof flags.key === 'string' ? flags.key : rest[0]?.startsWith('pm_live_') ? rest[0] : null;
+      if (key) {
+        if (!key.startsWith('pm_live_')) throw new Error('that does not look like a pwamart key (pm_live_…)');
+        const m = await api.me({ ...auth, key });
+        const file = await api.saveConfig({ key, server: auth.server });
+        process.stderr.write(`Signed in as ${m.user.email} with an API key. Saved to ${file}.\n`);
+        return 0;
       }
-      if (!key.startsWith('pm_live_')) throw new Error('that does not look like a pwamart key (pm_live_…)');
-      const m = await api.me({ ...auth, key });
-      const file = await api.saveConfig({ key, server: auth.server });
-      process.stderr.write(`Signed in as ${m.user.email}. Saved to ${file}.\n`);
+      const { login } = await import('@profullstack/auth-system/cli');
+      const store = api.tokenStore();
+      await login({
+        issuer: auth.server,
+        clientId: 'pwamart-cli',
+        scope: 'read write',
+        store,
+        manual: flags.manual === true ? true : undefined,
+        manualRedirectUri: `${auth.server}/oauth/cli`,
+      });
+      const m = await api.me(await api.resolveAuth({ server: auth.server }));
+      process.stderr.write(`Signed in as ${m.user.email}. The CLI, TUI and MCP server share this sign-in (${store.file}).\n`);
       return 0;
+    }
+    case 'logout': {
+      const { logout } = await import('@profullstack/auth-system/cli');
+      const had = await logout({ store: api.tokenStore() });
+      const cfg = await api.loadConfig();
+      if (cfg.key) await api.saveConfig({ key: undefined });
+      process.stderr.write(had || cfg.key ? 'Signed out.\n' : 'Not signed in.\n');
+      return 0;
+    }
+    case 'upgrade':
+    case 'update': {
+      const { spawnSync } = await import('node:child_process');
+      const r = spawnSync('sh', ['-c', `curl -fsSL ${auth.server}/install.sh | sh -s -- --upgrade`], { stdio: 'inherit' });
+      return r.status ?? 1;
     }
     case 'whoami': {
       const m = await api.me(auth);

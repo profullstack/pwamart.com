@@ -77,7 +77,13 @@ const httpsUrl = (v) => {
 
 export async function currentUser(c) {
   const bearer = c.req.header('authorization');
-  const user = bearer ? await auth.userFromApiKey(bearer) : await auth.userFromSession(getCookie(c, config.session.cookie));
+  // Three ways in: a browser session, an API key (pm_live_…), or an OAuth 2.1
+  // access token from `pwamart login` (pm_at_…).
+  const user = !bearer
+    ? await auth.userFromSession(getCookie(c, config.session.cookie))
+    : /^Bearer\s+pm_at_/i.test(bearer)
+      ? await (await import('./oauth.js')).userFromAccessToken(bearer)
+      : await auth.userFromApiKey(bearer);
   if (user && !user.is_admin && config.adminEmails.includes(user.email.toLowerCase())) {
     await db()`update users set is_admin = true where id = ${user.id}`;
     user.is_admin = true;

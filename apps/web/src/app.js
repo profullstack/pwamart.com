@@ -5,6 +5,8 @@ import { configured, db, ping } from '@pwamart/db';
 import { Hono } from 'hono';
 import { api, coinpayWebhook } from './api.js';
 import * as auth from './auth.js';
+import { getCookie } from 'hono/cookie';
+import { mountOAuth } from './oauth.js';
 import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
@@ -262,10 +264,19 @@ app.get('/auth/magic', async (c) => {
   const s = token ? await auth.consumeLoginLink(token, { userAgent: c.req.header('user-agent') }) : null;
   if (!s) return c.redirect('/signin?error=expired', 302);
   c.header('set-cookie', auth.sessionCookie(s.sessionId));
+  // Back to where sign-in started (e.g. the CLI's consent page): same-site paths only.
+  const next = decodeURIComponent(getCookie(c, 'pm_next') ?? '');
+  if (next.startsWith('/') && !next.startsWith('//')) {
+    c.header('set-cookie', 'pm_next=; Path=/; Max-Age=0; SameSite=Lax', { append: true });
+    return c.redirect(next, 302);
+  }
   return c.redirect('/console', 302);
 });
 
 app.post('/webhooks/coinpay', coinpayWebhook);
+
+// OAuth 2.1 for the CLI, TUI and stdio MCP (shared house code: @profullstack/auth-system/oauth2).
+mountOAuth(app);
 
 /* --------------------------------------------------------------------- API -- */
 
@@ -353,6 +364,10 @@ app.get('/badges/:name{[a-z0-9-]+(@[23]x)?\\.(svg|png)}', (c) => {
   }
 });
 app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript' }));
+// Aliases: the same script with its mode preset, so `curl … | sh` is all anyone types.
+const withMode = (mode) => INSTALL_SH.replace(/^#!\/bin\/sh\n/, `#!/bin/sh\nPWAMART_MODE=\${PWAMART_MODE:-${mode}}\n`);
+app.get('/upgrade.sh', (c) => c.body(withMode('upgrade'), 200, { 'content-type': 'text/x-shellscript' }));
+app.get('/uninstall.sh', (c) => c.body(withMode('uninstall'), 200, { 'content-type': 'text/x-shellscript' }));
 app.get('/.well-known/pwamart.txt', (c) => c.text('pwamart.com lists itself.\n'));
 app.get('/robots.txt', (c) =>
   c.text(`User-agent: *\nAllow: /\nDisallow: /console\nDisallow: /api/\nSitemap: ${config.siteUrl}/sitemap.xml\n`),
@@ -419,6 +434,13 @@ Tools: search_apps, get_app, list_categories, install_app, submit_app, verify_ap
 ## CLI + TUI
 - curl -fsSL ${config.siteUrl}/install.sh | sh    (or npm i -g @profullstack/pwamart)
 - pwamart search <q> | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
+- pwamart login (OAuth 2.1, browser; --manual over SSH) | logout | whoami | upgrade | uninstall
+- curl -fsSL ${config.siteUrl}/upgrade.sh | sh ; curl -fsSL ${config.siteUrl}/uninstall.sh | sh
+
+## OAuth 2.1 (for the CLI, TUI and MCP; shared code: @profullstack/auth-system/oauth2)
+- Discovery: ${config.siteUrl}/.well-known/oauth-authorization-server
+- Public client pwamart-cli; authorization code + PKCE S256; loopback redirect http://127.0.0.1:<port>/callback
+- Access tokens pm_at_… (1h) work anywhere an API key does; refresh tokens rotate, reuse revokes the sign-in
 
 ## iOS
 - One app: ${config.siteUrl}/apps/<slug>/install.mobileconfig
