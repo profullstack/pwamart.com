@@ -48,10 +48,59 @@ export async function expireFeatured(sql = db()) {
   return rows.length;
 }
 
+/**
+ * The free CrawlProof ad that comes with a paid feature. Starts a campaign for each
+ * slot still running that has none (a few per turn: creating one takes a minute),
+ * and pauses a campaign once no running slot uses it. A campaign CrawlProof says
+ * already existed was not ours to start, so it is never ours to pause. Without the
+ * API token it does nothing and the slots wait.
+ */
+export async function syncFeaturedAds({ sql = db(), ads, siteUrl = config.siteUrl, perTurn = 3 } = {}) {
+  ads ??= await import('./crawlproof.js');
+  if (!config.crawlproof.apiToken && !ads.mock) return { started: 0, paused: 0 };
+  let started = 0;
+  let paused = 0;
+  const todo = await sql`select s.payment_id, a.slug, a.name from featured_slots s join apps a on a.id = s.app_id
+                         where s.ad_campaign_id is null and s.ends_at > now() and s.ad_attempts < 5
+                           and coalesce(s.ad_status, '') <> 'failed' and a.status = 'published'
+                         order by s.created_at limit ${perTurn}`;
+  for (const s of todo) {
+    try {
+      const c = await ads.createCampaign({ url: `${siteUrl}/apps/${s.slug}`, name: `${s.name}: featured on pwamart` });
+      // CrawlProof hands back (and resumes) any live or paused campaign for the URL.
+      // One an earlier feature of ours started is still ours to pause.
+      const [ours] = c.existing
+        ? await sql`select 1 from featured_slots where ad_campaign_id = ${c.id} and ad_status in ('active', 'paused') limit 1`
+        : [true];
+      await sql`update featured_slots set ad_campaign_id = ${c.id}, ad_campaign_ref = ${c.ref ?? null},
+                ad_status = ${ours ? 'active' : 'existing'}, ad_error = null where payment_id = ${s.payment_id}`;
+      started++;
+    } catch (err) {
+      const msg = String(err?.message ?? err).slice(0, 500);
+      await sql`update featured_slots set ad_attempts = ad_attempts + 1, ad_error = ${msg},
+                ad_status = case when ad_attempts + 1 >= 5 then 'failed' else ad_status end where payment_id = ${s.payment_id}`;
+      console.error(`[featured-ads] ${s.slug}: ${msg}`);
+    }
+  }
+  const done = await sql`select distinct s.ad_campaign_id from featured_slots s
+                         where s.ad_status = 'active' and s.ends_at <= now()
+                           and not exists (select 1 from featured_slots o where o.ad_campaign_id = s.ad_campaign_id and o.ends_at > now())`;
+  for (const { ad_campaign_id: id } of done) {
+    try {
+      await ads.setCampaignStatus(id, 'paused');
+      await sql`update featured_slots set ad_status = 'paused' where ad_campaign_id = ${id} and ad_status = 'active'`;
+      paused++;
+    } catch (err) {
+      console.error(`[featured-ads] pause ${id}: ${err?.message ?? err}`);
+    }
+  }
+  return { started, paused };
+}
+
 /** What one app's featured state looks like to its owner. */
 export async function featuredState(appId) {
   const [app] = await db()`select featured, featured_until from apps where id = ${appId}`;
-  const slots = await db()`select s.starts_at, s.ends_at, s.issue_id, i.sent_at as issue_sent_at
+  const slots = await db()`select s.starts_at, s.ends_at, s.issue_id, i.sent_at as issue_sent_at, s.ad_status, s.ad_campaign_ref
                            from featured_slots s left join newsletter_issues i on i.id = s.issue_id
                            where s.app_id = ${appId} order by s.created_at desc limit 10`;
   return {

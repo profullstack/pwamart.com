@@ -9,7 +9,8 @@ import { categoryCounts, getApp, getPublisher, listApps, reviewsFor, shape } fro
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { appPage, browsePage, developersPage, featuredPage, homePage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, browsePage, developersPage, featuredPage, homePage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -138,7 +139,7 @@ app.get('/publishers/:slug', async (c) => {
   return html(c, publisherPage({ publisher: p, list: await listApps({ publisher: p.slug, limit: 100 }), stats: await stats() }));
 });
 
-app.get('/pricing', async (c) => html(c, pricingPage({ stats: await stats() })));
+app.get('/pricing', async (c) => html(c, pricingPage({ stats: await stats(), net: networkStats() })));
 app.get('/developers', async (c) => html(c, developersPage({ stats: await stats() })));
 
 /* -------------------------------------------------- featured + newsletter -- */
@@ -149,7 +150,23 @@ app.get('/featured', async (c) => {
     c,
     featuredPage({
       stats: await stats(),
+      net: networkStats(),
       featured: featured.apps,
+      subscribers: counts.active,
+      priceCents: newsletter.FEATURED.priceCents,
+      days: newsletter.FEATURED.days,
+    }),
+  );
+});
+
+// Who featuring reaches: the store's own numbers, the CrawlProof network, the plans.
+app.get('/advertise', async (c) => {
+  const counts = configured() ? await newsletter.subscriberCounts() : { active: 0 };
+  return html(
+    c,
+    advertisePage({
+      stats: await stats(),
+      net: networkStats(),
       subscribers: counts.active,
       priceCents: newsletter.FEATURED.priceCents,
       days: newsletter.FEATURED.days,
@@ -238,6 +255,15 @@ app.post('/webhooks/coinpay', coinpayWebhook);
 /* --------------------------------------------------------------------- API -- */
 
 app.get('/api/v1', (c) => c.json({ name: 'pwamart', version: VERSION, docs: `${config.siteUrl}/llms.txt`, mcp: `${config.siteUrl}/mcp` }));
+// The /advertise numbers as JSON: the store's own counts plus the CrawlProof network
+// (null until the first refresh lands, or without the API token).
+app.get('/api/v1/network', async (c) =>
+  c.json(
+    { store: await stats(), network: networkStats(), featured: { price_cents: newsletter.FEATURED.priceCents, days: newsletter.FEATURED.days, includes: ['home page', 'newsletter', 'crawlproof ad'] } },
+    200,
+    { 'cache-control': 'public, max-age=300' },
+  ),
+);
 app.get('/api/v1/health', async (c) => {
   const database = await ping();
   const ok = database === 'ok';
@@ -326,6 +352,7 @@ app.get('/sitemap.xml', async (c) => {
     u('/pricing'),
     u('/developers'),
     u('/featured'),
+    u('/advertise'),
     u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
@@ -359,12 +386,14 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
-- POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue
+- POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue + a free CrawlProof ad
+- GET  /network                            store counts + 30-day CrawlProof network reach (what featuring buys)
 - GET  /apps/:slug/featured                featured state, owed newsletter slot
 - POST /newsletter/subscribe {email}       double opt-in (public)
 
 ## Get featured
-$19, paid once in crypto: ${config.siteUrl}/featured. Newsletter: ${config.siteUrl}/newsletter
+$19, paid once in crypto: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
+for the same week; reach: ${config.siteUrl}/advertise. Newsletter: ${config.siteUrl}/newsletter
 
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)

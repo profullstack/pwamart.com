@@ -579,6 +579,48 @@ d('get featured for $19 + the newsletter', () => {
     expect((await db()`select count(*)::int as n from featured_slots where payment_id = (select id from payments where provider_ref = ${ref})`)[0].n).toBe(0);
   });
 
+  test('each paid feature gets a free CrawlProof ad, paused once no running feature uses it', async () => {
+    const { syncFeaturedAds } = await import('../apps/web/src/newsletter.js');
+    const calls = [];
+    // CrawlProof answers `existing` with the same campaign for a URL it already runs.
+    const ads = {
+      mock: true,
+      async createCampaign(c) {
+        calls.push(['create', c]);
+        return { id: 'cmp_1', ref: 'crawlproof-ad-1', existing: calls.filter((x) => x[0] === 'create').length > 1 };
+      },
+      async setCampaignStatus(id, status) {
+        calls.push(['status', id, status]);
+      },
+    };
+    // Two purchases above: both slots run, so both get the campaign and nothing pauses.
+    expect(await syncFeaturedAds({ ads, siteUrl: 'https://pwamart.test' })).toEqual({ started: 2, paused: 0 });
+    expect(calls[0][1]).toEqual({ url: `https://pwamart.test/apps/${slug}`, name: expect.stringContaining('featured on pwamart') });
+    const st = (await call('GET', `/apps/${slug}/featured`)).body;
+    expect(st.slots.every((s) => s.ad_status === 'active' && s.ad_campaign_ref === 'crawlproof-ad-1')).toBe(true);
+    // Nothing left to start on the next turn.
+    expect(await syncFeaturedAds({ ads })).toEqual({ started: 0, paused: 0 });
+
+    // The first week ends while the second runs: the shared campaign keeps going.
+    const slots = await db()`select payment_id from featured_slots s join apps a on a.id = s.app_id where a.slug = ${slug} order by s.starts_at`;
+    await db()`update featured_slots set ends_at = now() - interval '1 minute' where payment_id = ${slots[0].payment_id}`;
+    expect((await syncFeaturedAds({ ads })).paused).toBe(0);
+    // Both over: paused once, and only once.
+    await db()`update featured_slots set ends_at = now() - interval '1 minute' where payment_id = ${slots[1].payment_id}`;
+    expect((await syncFeaturedAds({ ads })).paused).toBe(1);
+    expect(calls.filter((x) => x[0] === 'status')).toEqual([['status', 'cmp_1', 'paused']]);
+    expect((await syncFeaturedAds({ ads })).paused).toBe(0);
+
+    // A failed create is retried, then given up on after 5 tries.
+    await db()`update featured_slots set ends_at = now() + interval '1 day', ad_campaign_id = null, ad_status = null where payment_id = ${slots[1].payment_id}`;
+    const broken = { mock: true, createCampaign: async () => { throw new Error('crawlproof down'); }, setCampaignStatus: async () => {} };
+    for (let i = 0; i < 6; i++) await syncFeaturedAds({ ads: broken });
+    const [row] = await db()`select ad_attempts, ad_status, ad_error from featured_slots where payment_id = ${slots[1].payment_id}`;
+    expect(row).toEqual({ ad_attempts: 5, ad_status: 'failed', ad_error: 'crawlproof down' });
+    // Put the week back as it was for the expiry test below.
+    await db()`update featured_slots set ends_at = now() + interval '7 days' where payment_id = ${slots[1].payment_id}`;
+  });
+
   test('expiry takes a paid feature down; a staff pick stays', async () => {
     const { expireFeatured } = await import('../apps/web/src/newsletter.js');
     await db()`update apps set featured_until = now() - interval '1 minute' where slug = ${slug}`;
