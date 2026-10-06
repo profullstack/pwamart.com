@@ -174,3 +174,9 @@ export async function runTui(auth, opts = {}) {
   void load();
   await app.start();
 }
+
+/** The screen as plain text, for tests and screenshots without a terminal. */
+export async function renderStore(state, options = { width: 120, height: 30 }) {
+  const { renderToText } = await import('@profullstack/hqtui/testing');
+  return renderToText(view(state), options);
+}

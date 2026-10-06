@@ -4,8 +4,7 @@ import { e, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
 import { formatList, parse } from '../packages/cli/src/cli.js';
 import { appArgs, desktopEntry, findBrowser } from '../packages/cli/src/install.js';
-import { initialState, view } from '../packages/cli/src/tui.js';
-import { renderToText } from '@profullstack/hqtui/testing';
+import { initialState, renderStore } from '../packages/cli/src/tui.js';
 
 describe('inspector parsing', () => {
   test('readHead finds the manifest, theme color, verification meta and service worker', () => {
@@ -91,7 +90,7 @@ describe('mcp', () => {
 });
 
 describe('tui', () => {
-  test('renders the store view', () => {
+  test('renders the store view', async () => {
     const state = initialState();
     state.list = { total: 1, apps: [{ slug: 'notes', name: 'Notes', rating: 4, category_name: 'Productivity', publisher: { name: 'Alice' } }] };
     state.detail = {
@@ -101,7 +100,7 @@ describe('tui', () => {
         checks: [{ level: 'required', ok: true, label: 'Links a web app manifest' }],
       },
     };
-    const text = renderToText(view(state), { width: 120, height: 30 });
+    const text = await renderStore(state);
     expect(text).toContain('pwamart');
     expect(text).toContain('Notes');
     expect(text).toContain('pwamart install notes');
