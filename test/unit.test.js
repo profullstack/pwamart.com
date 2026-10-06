@@ -89,6 +89,15 @@ describe('mcp', () => {
   });
 });
 
+describe('payments', () => {
+  // Stripe is off-limits (house rule): CoinPay's 'card' and 'both' methods open a Stripe session.
+  test('checkout is crypto only', async () => {
+    const src = await Bun.file(new URL('../apps/web/src/api.js', import.meta.url)).text();
+    expect(src).toContain("paymentMethod: 'crypto'");
+    expect(src).not.toMatch(/paymentMethod:\s*'(card|both)'/);
+  });
+});
+
 describe('tui', () => {
   test('renders the store view', async () => {
     const state = initialState();

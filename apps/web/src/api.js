@@ -639,7 +639,8 @@ api.post('/billing/checkout', async (c) => {
     description: `pwamart ${p.name}: 1 year`,
     metadata: { user_id: user.id, plan, kind: 'year' },
     blockchain: config.coinpay.defaultChain,
-    paymentMethod: 'both',
+    // Crypto only: never 'card' or 'both', which open a Stripe session (Stripe is off-limits).
+    paymentMethod: 'crypto',
     successUrl: `${config.siteUrl}/console/billing?paid=1`,
     cancelUrl: `${config.siteUrl}/console/billing`,
   });
