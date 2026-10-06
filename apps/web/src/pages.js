@@ -181,7 +181,7 @@ export function shareBuilder(app) {
 export function claimNote(publisher) {
   return `<div class="claim-note"><span class="pill-unclaimed">Unclaimed</span>
     Imported from a public directory. Do you run <b>${e(publisher.claim_domain)}</b>?
-    <a href="/console/claim/${e(publisher.slug)}">Claim it with a DNS record →</a></div>`;
+    <a href="/console/claim/${e(publisher.slug)}">Claim it →</a></div>`;
 }
 
 /** "Get notified" for an app or a publisher: email, this browser, or one click when signed in. store.js wires it. */
@@ -599,9 +599,10 @@ export function developersPage({ stats }) {
   <section class="block" id="verify"><h2>2 · Verify the domain</h2>
     <p>Any one of these, with the token from your app's page in the console:</p>
     <ul>
+      <li><code>"pwamart": { "verification": "TOKEN" }</code> in your web app manifest</li>
       <li><code>https://your.app/.well-known/pwamart.txt</code> containing the token</li>
       <li><code>&lt;meta name="pwamart-verification" content="TOKEN"&gt;</code> in the page head</li>
-      <li>DNS TXT <code>_pwamart.your.app</code> = <code>pwamart-verification=TOKEN</code></li>
+      <li>DNS TXT <code>_pwamart.your.app</code> = <code>pwamart-verification=TOKEN</code> (not on shared hosts like <code>*.vercel.app</code> or <code>*.github.io</code>, whose DNS belongs to the platform)</li>
     </ul>
     <p>Then <code>pwamart verify your-app</code> and <code>pwamart publish your-app</code>.</p>
   </section>
@@ -851,7 +852,7 @@ export function publishersPage({ q, filter, sort, list, offset, limit, stats }) 
   <section class="block" style="padding-top:40px">
     <div class="eyebrow">${e(list.total)} publisher${list.total === 1 ? '' : 's'}</div>
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 14px">${q ? `Publishers matching “${e(q)}”` : 'Publishers'}</h1>
-    <p class="lede" style="margin:0 0 20px">Everyone with a live app on pwamart. <b>Unclaimed</b> publishers were listed from another directory; if one is yours, open it and claim it with a DNS record.</p>
+    <p class="lede" style="margin:0 0 20px">Everyone with a live app on pwamart. <b>Unclaimed</b> publishers were listed from another directory; if one is yours, open it and claim it with a DNS record or a token on the site.</p>
     <form action="/publishers" role="search" style="display:flex;gap:8px;max-width:520px;margin:0 0 16px;flex-wrap:wrap">
       ${filter && filter !== 'all' ? `<input type="hidden" name="filter" value="${e(filter)}">` : ''}
       <input name="q" type="search" value="${e(q ?? '')}" placeholder="Search publishers" aria-label="Search publishers" style="flex:1;min-width:200px;padding:12px 14px;border-radius:12px;border:1px solid rgba(127,127,127,.35);font:inherit;background:transparent;color:inherit">

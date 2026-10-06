@@ -291,7 +291,7 @@ async function appDetail(slug) {
 
     ${
       !app.verified
-        ? `<div class="panel" style="margin-bottom:18px"><h3>Prove you own ${esc(app.origin)}</h3><p class="muted">Do any one of these, then press Verify.</p>
+        ? `<div class="panel" style="margin-bottom:18px"><h3>Prove you own ${esc(app.origin)}</h3><p class="muted">Do any one of these, then press Verify.</p>${verify.note ? `<p class="muted">${esc(verify.note)}</p>` : ''}
         ${verify.options.map((o) => `<p style="margin:10px 0 4px"><b>${esc(o.method)}</b></p><div class="code-block">${esc(o.how)}</div>`).join('')}
         <div class="row" style="margin-top:14px"><button class="btn dark" id="verify">Verify</button><span id="vmsg"></span></div></div>`
         : ''
@@ -612,18 +612,24 @@ async function claimView(slug) {
   const render = () => {
     const r = claim.record;
     const state = {
-      pending: `<span class="pill unlisted">waiting for DNS</span> <span class="muted">Checking every ${claim.interval_seconds} seconds${claim.checks ? ` · ${claim.checks} checks so far` : ''}${claim.last_result ? ` · last: ${esc(claim.last_result)}` : ''}</span>`,
+      pending: `<span class="pill unlisted">waiting for proof</span> <span class="muted">Checking every ${claim.interval_seconds} seconds${claim.checks ? ` · ${claim.checks} checks so far` : ''}${claim.last_result ? ` · last: ${esc(claim.last_result)}` : ''}</span>`,
       verified: '<span class="pill published">verified</span> It is yours.',
-      expired: '<span class="pill">expired</span> No record turned up in 7 days. Start again to get a new token.',
+      expired: '<span class="pill">expired</span> No proof turned up in 7 days. Start again to get a new token.',
       superseded: '<span class="pill">closed</span> Someone else proved the domain first.',
     }[claim.status];
     view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Claim a listing</div><h1>${esc(claim.publisher?.name ?? slug)}</h1></div></div>
       <div class="panel" style="margin-bottom:18px">
         <h3>Prove you run ${esc(claim.domain)}</h3>
-        <p class="muted">Add this DNS record where ${esc(claim.domain)} is hosted (Cloudflare, Porkbun, Route 53, ...). Leave this page open or come back later: we keep checking until it shows up.</p>
+        ${
+          r
+            ? `<p class="muted">Add this DNS record where ${esc(claim.domain)} is hosted (Cloudflare, Porkbun, Route 53, ...). Leave this page open or come back later: we keep checking until it shows up.</p>
         <div class="snip"><div class="snip-head"><span>Type</span></div><pre><code>${esc(r.type)}</code></pre></div>
         <div class="snip"><div class="snip-head"><span>Name / host</span><button class="btn sm" type="button" data-copy="${esc(r.name)}">Copy</button></div><pre><code>${esc(r.name)}</code></pre></div>
         <div class="snip"><div class="snip-head"><span>Value</span><button class="btn sm" type="button" data-copy="${esc(r.value)}">Copy</button></div><pre><code>${esc(r.value)}</code></pre></div>
+        <p class="muted" style="margin-top:16px">Or put the token on the site itself, any one of these:</p>`
+            : `<p class="muted">${esc(claim.domain)} is on a shared host, whose DNS belongs to the platform, so put the token on the site itself, any one of these. Leave this page open or come back later: we keep checking until it shows up.</p>`
+        }
+        ${(claim.alternatives ?? []).map((o) => `<p style="margin:10px 0 4px"><b>${esc(o.method)}</b></p><div class="code-block">${esc(o.how)}</div>`).join('')}
         <p style="margin:16px 0 0" id="claim-state">${state}</p>
         <div class="row" style="margin-top:14px">
           ${claim.status === 'pending' ? '<button class="btn dark" id="check-now">Check now</button>' : ''}
