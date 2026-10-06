@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { sendPush, vapidKeysFromEnv } from '@profullstack/notifications/server';
 import { db } from '@pwamart/db';
 import { config } from './config.js';
-import { inspect } from './inspect.js';
+import { featureColumns, inspect } from './inspect.js';
 import { send } from './mail.js';
 
 /**
@@ -88,7 +88,11 @@ export async function runReleaseDetect({ batch = 20, inspectFn = inspect, sql = 
       });
       releases++;
     }
-    await sql`update apps set manifest_hash = ${fp.hash}, manifest_fields = ${sql.json(fp.fields)}, release_checked_at = now() where id = ${a.id}`;
+    // The same read keeps the feature tags (works offline) current.
+    const f = report.offline ? featureColumns(report) : null;
+    await sql`update apps set manifest_hash = ${fp.hash}, manifest_fields = ${sql.json(fp.fields)}, release_checked_at = now()
+              ${f ? sql`, features = ${f.features}::text[], offline_reason = ${f.offline_reason}, features_checked_at = now()` : sql``}
+              where id = ${a.id}`;
   }
   return { checked: due.length, releases };
 }

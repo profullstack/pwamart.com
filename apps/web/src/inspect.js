@@ -51,14 +51,14 @@ async function assertPublic(url) {
 }
 
 /** GET with every hop checked. Returns { url, status, type, text }. */
-export async function safeFetch(url, { accept = '*/*', maxBytes = MAX_BYTES } = {}) {
+export async function safeFetch(url, { accept = '*/*', maxBytes = MAX_BYTES, timeoutMs = TIMEOUT_MS } = {}) {
   let current = url;
   for (let hop = 0; hop < 5; hop++) {
     await assertPublic(current);
     const res = await fetch(current, {
       redirect: 'manual',
       headers: { 'user-agent': UA, accept },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
       current = new URL(res.headers.get('location'), current).href;
@@ -125,6 +125,110 @@ export function readHead(html, base) {
   out.title = title ? decode(title[1].trim()) : null;
   out.registersServiceWorker = /serviceWorker\s*\.\s*register\s*\(/.test(html) || /\bworkbox\b/i.test(html);
   return out;
+}
+
+/* ---------------------------------------------------------- offline -- */
+
+/**
+ * The service worker URLs a page registers: `navigator.serviceWorker.register('/sw.js')`,
+ * minified (`register("./sw.js",{scope:"/"})`) or `register(new URL('./sw.js', import.meta.url))`.
+ * Only same-origin URLs: a browser refuses any other, so we never fetch one.
+ */
+export function serviceWorkerUrls(text, base) {
+  const out = [];
+  const origin = new URL(base).origin;
+  const re = /serviceWorker\s*\.\s*register\s*\(\s*(?:new\s+URL\s*\(\s*)?(['"`])([^'"`\s]{1,300})\1/g;
+  for (const m of String(text ?? '').matchAll(re)) {
+    if (m[2].includes('${')) continue;
+    try {
+      const u = new URL(decode(m[2]), base);
+      if (u.origin === origin && !out.includes(u.href)) out.push(u.href);
+    } catch {}
+  }
+  return out;
+}
+
+/** Where service workers usually live when the page registers one from a bundle we do not read. */
+export const SW_FALLBACKS = ['/sw.js', '/service-worker.js', '/serviceworker.js', '/sw.min.js'];
+
+const FETCH_HANDLER = /addEventListener\s*\(\s*(['"`])fetch\1|\bonfetch\s*=/;
+
+/**
+ * Does this service worker script make the app work offline? It has to answer
+ * requests (a fetch handler) and keep responses (the Cache API), or be Workbox,
+ * which does both. A worker that only shows push notifications, or a fetch handler
+ * that passes every request to the network, does not.
+ */
+export function classifyServiceWorker(src) {
+  const s = String(src ?? '');
+  if (!s.trim()) return { offline: false, reason: 'no service worker' };
+  if (/\bworkbox\b|workbox-sw|precacheAndRoute|registerRoute|__WB_MANIFEST/i.test(s)) return { offline: true, reason: 'workbox' };
+  if (!FETCH_HANDLER.test(s)) return { offline: false, reason: 'no fetch handler' };
+  const cache = /\bcaches\s*\.\s*(open|match|keys|has)\s*\(/.test(s) || /\.addAll\s*\(/.test(s) || /cacheStorage/i.test(s);
+  if (!cache) return { offline: false, reason: 'fetch handler without a cache' };
+  return { offline: true, reason: 'fetch+cache' };
+}
+
+/** A real script, not an SPA's catch-all index.html or a JSON 404 served with 200. */
+const looksLikeScript = (r) =>
+  r && r.status < 400 && !/html|json|xml|image\//i.test(r.type) && !/^\s*</.test(r.text.slice(0, 200)) && r.text.trim().length > 0;
+
+/**
+ * Find the app's service worker and classify it. Candidates in order: what the page
+ * HTML registers, the manifest's `serviceworker.src`, what one small same-origin
+ * registration script registers (vite-plugin-pwa's registerSW.js), then the usual
+ * paths. A few short fetches at most; never throws.
+ */
+export async function detectOffline({ html, pageUrl, manifest = null, manifestUrl = null, fetchFn = safeFetch, maxFetches = 4 }) {
+  const origin = new URL(pageUrl).origin;
+  const candidates = serviceWorkerUrls(html, pageUrl);
+  const add = (u, base = origin) => {
+    try {
+      const h = new URL(u, base).href;
+      if (new URL(h).origin === origin && !candidates.includes(h)) candidates.push(h);
+    } catch {}
+  };
+  if (typeof manifest?.serviceworker?.src === 'string') add(manifest.serviceworker.src, manifestUrl ?? pageUrl);
+  let fetches = 0;
+  const get = async (u) => {
+    if (fetches >= maxFetches) return null;
+    fetches++;
+    try {
+      return await fetchFn(u, { accept: 'text/javascript,application/javascript,*/*;q=0.5', maxBytes: 1024 * 1024, timeoutMs: 5_000 });
+    } catch {
+      return null;
+    }
+  };
+  if (!candidates.length) {
+    const script = [...String(html ?? '').matchAll(/<script\b[^>]*\ssrc\s*=\s*["']([^"']+)["'][^>]*>/gi)]
+      .map((m) => decode(m[1]))
+      .find((s) => /register|(^|[/._-])sw([._-]|$)|service-?worker|pwa/i.test(s));
+    let u = null;
+    try {
+      u = script ? new URL(script, pageUrl) : null;
+    } catch {}
+    if (u?.origin === origin) {
+      const r = await get(u.href);
+      if (looksLikeScript(r)) {
+        if (FETCH_HANDLER.test(r.text) && !/serviceWorker\s*\.\s*register/.test(r.text)) return { ...classifyServiceWorker(r.text), sw: r.url };
+        for (const v of serviceWorkerUrls(r.text, r.url)) add(v);
+      }
+    }
+  }
+  const registered = candidates.length > 0 || /serviceWorker\s*\.\s*register\s*\(/.test(String(html ?? ''));
+  for (const f of SW_FALLBACKS) add(f);
+  // The first worker that works offline wins; a worker that does not (a stale /sw.js
+  // left behind by a rename) does not stop the search while fetches remain.
+  let first = null;
+  for (const u of candidates) {
+    if (fetches >= maxFetches) break;
+    const r = await get(u);
+    if (!looksLikeScript(r) || new URL(r.url).origin !== origin) continue;
+    const c = { ...classifyServiceWorker(r.text), sw: r.url };
+    if (c.offline) return c;
+    first ??= c;
+  }
+  return first ?? { offline: false, reason: registered ? 'service worker not found' : 'no service worker', sw: null };
 }
 
 /** The largest square-ish icon at or above `min`, preferring png/svg/webp. */
@@ -213,8 +317,14 @@ export async function inspect(rawUrl) {
   add('display', ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay', 'tabbed'].includes(display),
     'Opens in its own window', 'Set "display": "standalone".');
   add('start_url', startUrl && new URL(startUrl).origin === finalUrl.origin, 'Start URL on the same origin', 'start_url must stay on the app\'s own origin.');
-  add('sw', head.registersServiceWorker, 'Registers a service worker',
+  const offline = await detectOffline({ html: page.text, pageUrl: finalUrl.href, manifest, manifestUrl });
+  add('sw', head.registersServiceWorker || Boolean(offline.sw), 'Registers a service worker',
     'Not required by Chrome since 2023, but it is what makes an app work offline.', 'recommended');
+  add('offline', offline.offline, 'Works offline',
+    offline.offline
+      ? `Its service worker answers requests from a cache (${offline.reason}).`
+      : `Not detected (${offline.reason}). Cache the app shell in the service worker and answer fetch events from that cache; Workbox's precacheAndRoute does both.`,
+    'recommended');
   add('maskable', icons.some((i) => String(i.purpose ?? '').includes('maskable')), 'Has a maskable icon',
     'Android crops icons to a shape; a maskable icon keeps the art inside the safe zone.', 'recommended');
   add('screenshots', Array.isArray(mf.screenshots) && mf.screenshots.length > 0, 'Has screenshots',
@@ -231,6 +341,8 @@ export async function inspect(rawUrl) {
     checks,
     manifestUrl: manifest ? manifestUrl : null,
     manifest,
+    offline,
+    features: offline.offline ? ['offline'] : [],
     app: {
       name: listingName(mf.name || head.title || finalUrl.hostname, mf.short_name),
       fullName: mf.name || null,
@@ -250,6 +362,11 @@ export async function inspect(rawUrl) {
     },
     verifyMeta: head.verify,
   };
+}
+
+/** Inspection -> the apps columns the feature filters read. */
+export function featureColumns(r) {
+  return { features: r.features ?? [], offline_reason: r.offline?.reason ?? null, features_checked_at: new Date() };
 }
 
 /* ------------------------------------------------------- domain ownership -- */

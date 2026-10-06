@@ -163,6 +163,43 @@ addJob('release-notify', 60_000, async () => {
   await sendDeliveries();
 });
 
+/* ------------------------------------------------------ feature tags -- */
+
+/**
+ * Listings never inspected for features (they predate the offline check) are
+ * re-inspected a few per turn, one site at a time, so the backlog clears in an hour
+ * or two without hammering anyone. A site that is down is marked checked anyway;
+ * release-detect's daily re-read tags it when it is back.
+ */
+export async function runFeatureBackfill({ batch = 6, inspectFn, sql = db() } = {}) {
+  const run = inspectFn ?? (await import('./inspect.js')).inspect;
+  const { featureColumns } = await import('./inspect.js');
+  const due = await sql`
+    select id, url, origin from apps
+    where status in ('published', 'unlisted') and features_checked_at is null
+    order by published_at nulls last limit ${batch}`;
+  let offline = 0;
+  for (const a of due) {
+    try {
+      const r = await run(a.url);
+      if (r.origin !== a.origin) throw new Error(`now lands on ${r.origin}`);
+      const f = featureColumns(r);
+      if (f.features.includes('offline')) offline++;
+      await sql`update apps set features = ${f.features}::text[], offline_reason = ${f.offline_reason}, features_checked_at = now(),
+                check_report = ${sql.json({ installable: r.installable, score: r.score, checks: r.checks })}
+                where id = ${a.id}`;
+    } catch (err) {
+      await sql`update apps set features_checked_at = now(), offline_reason = ${`not checked: ${String(err?.message ?? err)}`.slice(0, 200)} where id = ${a.id}`;
+    }
+  }
+  return { checked: due.length, offline };
+}
+
+addJob('feature-backfill', 2 * 60_000, async () => {
+  const r = await runFeatureBackfill();
+  if (r.checked) console.log(`[daemon] feature-backfill ${JSON.stringify(r)}`);
+});
+
 /* ------------------------------------------------- featured + newsletter -- */
 
 // A paid feature comes off the home page when its week is up (staff picks never do).

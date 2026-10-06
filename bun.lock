@@ -25,7 +25,7 @@
     },
     "packages/cli": {
       "name": "@profullstack/pwamart",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "bin": {
         "pwamart": "./bin/pwamart.mjs",
       },
@@ -44,7 +44,7 @@
     },
     "packages/mcp": {
       "name": "@profullstack/pwamart-mcp",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "bin": {
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },

@@ -10,7 +10,7 @@ Or use the hosted endpoint with no install: `https://pwamart.com/mcp` (streamabl
 
 | Tool | Needs a key |
 | --- | --- |
-| `search_apps` | no |
+| `search_apps` (`feature: "offline"` or `offline: true` for apps that work offline) | no |
 | `get_app` | no |
 | `list_categories` | no |
 | `install_app`: steps and command for ios, android, desktop, linux, macos, windows, tron | no |

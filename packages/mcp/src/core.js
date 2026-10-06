@@ -20,6 +20,8 @@ export const TOOLS = [
         query: { type: 'string', description: 'free text, e.g. "markdown notes"' },
         category: { type: 'string', description: 'category slug from list_categories' },
         sort: { type: 'string', enum: ['top', 'new', 'rating', 'name'] },
+        feature: { type: 'string', enum: ['offline'], description: 'only apps with this detected feature; offline = its service worker answers from a cache' },
+        offline: { type: 'boolean', description: 'shorthand for feature: "offline"' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
       additionalProperties: false,
@@ -144,10 +146,11 @@ export async function callTool(name, args, call, siteUrl) {
   const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
   switch (name) {
     case 'search_apps': {
-      const r = await call(`/apps?${q({ q: args.query, category: args.category, sort: args.sort, limit: args.limit ?? 10 })}`);
+      const feature = args.feature ?? (args.offline ? 'offline' : undefined);
+      const r = await call(`/apps?${q({ q: args.query, category: args.category, sort: args.sort, feature, limit: args.limit ?? 10 })}`);
       return text({
         total: r.total,
-        apps: r.apps.map((a) => ({ slug: a.slug, name: a.name, summary: a.summary, publisher: a.publisher.name, category: a.category, rating: a.rating, installs: a.installs, url: a.start_url, page: `${siteUrl}/apps/${a.slug}` })),
+        apps: r.apps.map((a) => ({ slug: a.slug, name: a.name, summary: a.summary, publisher: a.publisher.name, category: a.category, features: a.features ?? [], rating: a.rating, installs: a.installs, url: a.start_url, page: `${siteUrl}/apps/${a.slug}` })),
       });
     }
     case 'get_app': {
