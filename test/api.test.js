@@ -300,3 +300,103 @@ d('store end to end', () => {
     }
   });
 });
+
+d('billing: periods, upgrades, downgrades, cancel', () => {
+  let user, call;
+  const DAY = 86400_000;
+  // A settled CoinPay webhook for `plan`, as the real one would arrive.
+  async function pay(plan, kind, amount) {
+    const ref = `pay_${randomBytes(6).toString('hex')}`;
+    await db()`insert into payments (user_id, provider, provider_ref, amount_cents, status) values (${user.id}, 'coinpay', ${ref}, ${amount}, 'pending')`;
+    const payload = JSON.stringify({ type: 'payment.confirmed', data: { payment_id: ref, status: 'confirmed', metadata: { user_id: user.id, plan, kind } } });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = createHmac('sha256', 'whsec_test').update(`${t}.${payload}`).digest('hex');
+    const res = await app.request('/webhooks/coinpay', { method: 'POST', headers: { 'content-type': 'application/json', 'x-coinpay-signature': `t=${t},v1=${sig}` }, body: payload });
+    return (await res.json()).result;
+  }
+
+  test('a new account is free with quotes for both plans', async () => {
+    const k = await keyFor('dana@example.test');
+    user = k.user;
+    call = req(k.key);
+    const b = (await call('GET', '/billing')).body;
+    expect(b.status).toBe('free');
+    expect(b.plan.key).toBe('free');
+    expect(b.quotes.pro).toMatchObject({ kind: 'new', amount_cents: 1000 });
+    expect(b.quotes.unlimited).toMatchObject({ kind: 'new', amount_cents: 19900 });
+  });
+
+  test('buying Pro gives a year; renewing queues the next one after it', async () => {
+    await pay('pro', 'new', 1000);
+    let b = (await call('GET', '/billing')).body;
+    expect(b.plan.key).toBe('pro');
+    expect(b.status).toBe('active');
+    const end1 = new Date(b.coverage_end).getTime();
+    expect(Math.abs(end1 - (Date.now() + 365 * DAY))).toBeLessThan(DAY);
+    expect(b.quotes.pro.kind).toBe('renew');
+    await pay('pro', 'renew', 1000);
+    b = (await call('GET', '/billing')).body;
+    expect(b.periods.length).toBe(2);
+    // A calendar year: 366 days when it spans a 29 February.
+    expect(Math.abs(new Date(b.coverage_end).getTime() - (end1 + 365 * DAY))).toBeLessThanOrEqual(DAY + 60_000);
+  });
+
+  test('upgrading to Unlimited credits every unused Pro day and applies now', async () => {
+    const q = (await call('GET', '/billing/quote?plan=unlimited')).body;
+    expect(q.kind).toBe('upgrade');
+    // Two unused Pro years: about $20 of credit.
+    expect(q.credit_cents).toBeGreaterThan(1990);
+    expect(q.amount_cents).toBe(19900 - q.credit_cents);
+    // A discounted upgrade is still honoured by the webhook.
+    await pay('unlimited', 'upgrade', q.amount_cents);
+    const b = (await call('GET', '/billing')).body;
+    expect(b.plan.key).toBe('unlimited');
+    expect(b.periods.map((p) => p.plan)).toEqual(['unlimited']);
+    expect(b.renew).toBe('same');
+  });
+
+  test('a full-price purchase paid short is not granted', async () => {
+    const r = await pay('unlimited', 'renew', 500);
+    expect(r.granted).toBe(false);
+  });
+
+  test('downgrade: switch at renewal, or prepay Pro to start when Unlimited ends', async () => {
+    let b = (await call('POST', '/billing/renewal', { renew: 'pro' })).body;
+    expect(b.renew_plan).toBe('pro');
+    expect(b.plan.key).toBe('unlimited');
+    const q = (await call('GET', '/billing/quote?plan=pro')).body;
+    expect(q.kind).toBe('downgrade');
+    expect(Math.abs(new Date(q.starts_at).getTime() - new Date(b.coverage_end).getTime())).toBeLessThan(5000);
+    await pay('pro', 'downgrade', 1000);
+    b = (await call('GET', '/billing')).body;
+    expect(b.plan.key).toBe('unlimited');
+    expect(b.periods.map((p) => p.plan)).toEqual(['unlimited', 'pro']);
+  });
+
+  test('cancel keeps the plan to its end, resume undoes it', async () => {
+    let b = (await call('POST', '/billing/cancel')).body;
+    expect(b.status).toBe('ending');
+    expect(b.plan.key).toBe('unlimited');
+    b = (await call('POST', '/billing/resume')).body;
+    expect(b.status).toBe('active');
+  });
+
+  test('reminders: due 14 days out, sent once, never after cancelling', async () => {
+    const { runReminders } = await import('../apps/web/src/daemon.js');
+    const erin = await auth.findOrCreateUser('erin@example.test');
+    await db()`insert into plan_periods (user_id, plan, starts_at, ends_at) values (${erin.id}, 'pro', now() - interval '355 days', now() + interval '10 days')`;
+    expect(await runReminders()).toBeGreaterThanOrEqual(1);
+    expect(await runReminders()).toBe(0);
+    const [n] = await db()`select kind from renewal_notices where user_id = ${erin.id}`;
+    expect(n.kind).toBe('14d');
+    const fran = await auth.findOrCreateUser('fran@example.test');
+    await db()`insert into plan_periods (user_id, plan, starts_at, ends_at) values (${fran.id}, 'pro', now() - interval '360 days', now() + interval '5 days')`;
+    await db()`insert into account_billing (user_id, renew) values (${fran.id}, 'none')`;
+    await runReminders();
+    expect((await db()`select 1 from renewal_notices where user_id = ${fran.id}`).length).toBe(0);
+  });
+
+  test('the console billing page shell loads', async () => {
+    expect((await app.request('/console/billing')).status).toBe(200);
+  });
+});

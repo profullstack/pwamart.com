@@ -14,6 +14,8 @@ if (configured()) {
   await migrate();
   // The coinpay object goes in whole: its getters read the environment on each access.
   configurePayments({ sql: db(), coinpay: config.coinpay, siteUrl: config.siteUrl });
+  // Renewal reminders, claim checks, the saasrow import: see daemon.js.
+  if (process.env.PWAMART_DAEMON !== 'off') (await import('./daemon.js')).startDaemon();
 }
 
 const port = Number(process.env.PORT || 3000);
