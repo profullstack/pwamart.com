@@ -103,6 +103,37 @@ addJob('saasrow-import', 20 * 60_000, async () => {
   console.log(`[daemon] saasrow-import ${JSON.stringify(r)}`);
 });
 
+/* ------------------------------------------------------------ listing ads -- */
+
+/**
+ * One CrawlProof campaign per published listing, pointing at its pwamart page.
+ * A few per turn: CrawlProof reads the page and writes the creatives, which takes
+ * a minute or so each. A failure is recorded and retried after a day, never in a
+ * tight loop. Running it twice is safe: CrawlProof hands back the live campaign.
+ */
+export async function runListingAds({ batch = 4, createCampaign } = {}) {
+  if (!config.crawlproof.apiToken && !createCampaign) return { created: 0, skipped: 'no CRAWLPROOF_API_TOKEN' };
+  const make = createCampaign ?? (await import('./crawlproof.js')).createCampaign;
+  const due = await db()`
+    select id, slug, name from apps
+    where status = 'published' and listing_ad_id is null
+      and (listing_ad_error is null or listing_ad_at < now() - interval '1 day')
+    order by featured desc, published_at limit ${batch}`;
+  let created = 0;
+  for (const a of due) {
+    try {
+      const c = await make({ url: `${config.siteUrl}/apps/${a.slug}`, name: `pwamart: ${a.name}`.slice(0, 80) });
+      await db()`update apps set listing_ad_id = ${c.id}, listing_ad_ref = ${c.ref ?? null}, listing_ad_at = now(), listing_ad_error = null where id = ${a.id}`;
+      created++;
+    } catch (err) {
+      await db()`update apps set listing_ad_at = now(), listing_ad_error = ${String(err.message).slice(0, 300)} where id = ${a.id}`;
+    }
+  }
+  return { created, due: due.length };
+}
+
+addJob('listing-ads', 5 * 60_000, () => runListingAds());
+
 /* ------------------------------------------------- featured + newsletter -- */
 
 // A paid feature comes off the home page when its week is up (staff picks never do).
