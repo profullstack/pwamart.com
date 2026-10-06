@@ -1,0 +1,49 @@
+.console { display: grid; grid-template-columns: 220px 1fr; gap: 32px; padding-top: 28px; padding-bottom: 60px; min-height: 70vh; }
+.side { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 84px; align-self: start; }
+.side a { text-decoration: none; padding: 9px 12px; border-radius: 10px; color: var(--ink-2); font-size: 14.5px; display: flex; justify-content: space-between; }
+.side a:hover { background: var(--paper-2); }
+.side a.on { background: var(--ink); color: var(--paper); }
+.side .sep { height: 1px; background: var(--line); margin: 10px 0; }
+.side small { font: 11px var(--mono); opacity: 0.7; }
+@media (max-width: 860px) {
+  .console { grid-template-columns: 1fr; gap: 14px; padding-top: 14px; }
+  .side { position: static; flex-direction: row; overflow-x: auto; gap: 6px; scrollbar-width: none; }
+  .side a { white-space: nowrap; border: 1px solid var(--line); }
+  .side .sep { display: none; }
+}
+.page-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.page-head h1 { font-size: clamp(30px, 4vw, 44px); }
+form.stack { display: grid; gap: 14px; max-width: 620px; }
+label.f { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+label.f small { font-weight: 400; color: var(--muted); }
+.f input, .f select, .f textarea {
+  font: 15px var(--sans); padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 100%;
+}
+.f textarea { min-height: 120px; resize: vertical; }
+.f input:focus, .f select:focus, .f textarea:focus { outline: 2px solid var(--orange); outline-offset: 0; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.table { width: 100%; border-collapse: collapse; font-size: 14.5px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.table th { text-align: left; font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--paper-2); }
+.table td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table .icon { width: 36px; height: 36px; vertical-align: middle; margin-right: 10px; }
+.table-wrap { overflow-x: auto; }
+.pill { display: inline-block; font: 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.pill.published { background: color-mix(in srgb, var(--green) 16%, transparent); border-color: var(--green); color: var(--green); }
+.pill.draft { color: var(--muted); }
+.pill.unlisted { color: var(--warn); border-color: var(--warn); }
+.meter { height: 8px; border-radius: 999px; background: var(--paper-2); overflow: hidden; border: 1px solid var(--line); }
+.meter i { display: block; height: 100%; background: var(--orange); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 26px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 8px; }
+.kpi b { font: 400 30px/1 var(--serif); }
+.kpi span { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.err { color: var(--orange-ink); font-size: 14px; }
+.ok-msg { color: var(--green); font-size: 14px; }
+.code-block { font: 13px/1.6 var(--mono); background: var(--paper-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; white-space: pre; }
+.signin { max-width: 440px; margin: 40px auto; }
+.signin h1 { font-size: 42px; margin-bottom: 10px; }
+.or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; margin: 6px 0; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+body:has(.signin) .side { display: none; }
+body:has(.signin) .console { grid-template-columns: 1fr; }

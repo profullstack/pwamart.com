@@ -1,0 +1,17 @@
+{
+  "name": "@pwamart/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/main.js"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^13",
+    "@simplewebauthn/server": "^13.2.0",
+    "@pwamart/db": "workspace:*",
+    "@pwamart/payments": "workspace:*",
+    "@profullstack/pwamart-mcp": "workspace:*",
+    "hono": "^4.10.3"
+  }
+}

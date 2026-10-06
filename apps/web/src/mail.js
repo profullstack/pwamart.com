@@ -22,16 +22,13 @@ export async function send({ to, subject, text }) {
 export const sendLoginLink = ({ email, url }) =>
   send({
     to: email,
-    subject: 'Your tleehealth sign-in link',
-    text: `Tap to sign in to tleehealth:\n\n${url}\n\nThe link works once and expires in 20 minutes.\nIf you did not ask for it, ignore this email.`,
+    subject: 'Your pwamart sign-in link',
+    text: `Tap to sign in to pwamart:\n\n${url}\n\nThe link works once and expires in 20 minutes.\nIf you did not ask for it, ignore this email.`,
   });
 
-export const sendAddedToOrg = ({ email, orgName, userType, url }) =>
+export const sendOrgInvite = ({ email, orgName, url }) =>
   send({
     to: email,
-    subject: `${orgName} added you on tleehealth`,
-    text:
-      userType === 'patient'
-        ? `${orgName} uses tleehealth for appointments, results and prescriptions.\n\nSign in with this email address to see your visits and records:\n\n${url}`
-        : `${orgName} added you to their team on tleehealth as ${userType.replace('_', ' ')}.\n\nSign in with this email address to get started:\n\n${url}`,
+    subject: `You were added to ${orgName} on pwamart`,
+    text: `${orgName} added you on pwamart, where they publish their web apps.\n\nSign in with this email address to join:\n\n${url}`,
   });

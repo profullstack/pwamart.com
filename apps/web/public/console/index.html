@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Console · pwamart</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f6f4ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101814" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/store.css">
+<link rel="stylesheet" href="/assets/console.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/" aria-label="pwamart home"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#16211d"/><ellipse cx="32" cy="32" rx="27" ry="10.5" transform="rotate(-28 32 32)" fill="none" stroke="#f6f4ed" stroke-opacity=".28" stroke-width="1.6"/><rect x="16" y="16" width="14" height="14" rx="4" fill="#f6f4ed"/><rect x="16" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/><rect x="34" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/><rect x="34" y="16" width="14" height="14" rx="7" fill="#e2582f"/><path d="M41 19.5v7M37.5 23h7" stroke="#16211d" stroke-width="2.2" stroke-linecap="round"/><circle cx="55.2" cy="18.6" r="2.6" fill="#e2582f"/></svg><span>pwamart<b>.</b></span></a>
+  <span class="eyebrow" style="margin-left:4px">console</span>
+  <nav class="nav" id="nav"></nav>
+</div></header>
+<div class="console wrap">
+  <aside class="side" id="side"></aside>
+  <main id="view"><p class="muted" style="padding:40px 0">Loading…</p></main>
+</div>
+<script src="/assets/webauthn.js"></script>
+<script src="/assets/console.js" type="module"></script>
+</body>
+</html>
