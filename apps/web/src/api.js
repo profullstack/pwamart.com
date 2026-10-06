@@ -11,6 +11,7 @@ import { vapidKeysFromEnv } from '@profullstack/notifications/server';
 import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
+import { sharedHost } from './shared-hosts.js';
 import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
 
@@ -481,14 +482,18 @@ function guessCategory(cats = []) {
 
 export function verifyHelp(row) {
   const host = new URL(row.origin).hostname;
+  const shared = sharedHost(host);
+  const options = [
+    { method: 'manifest', how: `Add to your web app manifest: "pwamart": { "verification": "${row.verify_token}" }` },
+    { method: 'well-known', how: `Serve ${row.origin}/.well-known/pwamart.txt containing: ${row.verify_token}` },
+    { method: 'meta', how: `Add to the page head: <meta name="pwamart-verification" content="${row.verify_token}">` },
+  ];
+  if (!shared) options.push({ method: 'dns', how: `DNS TXT record _pwamart.${host} = pwamart-verification=${row.verify_token}` });
   return {
     token: row.verify_token,
     verified: Boolean(row.verified_at ?? row.verified),
-    options: [
-      { method: 'well-known', how: `Serve ${row.origin}/.well-known/pwamart.txt containing: ${row.verify_token}` },
-      { method: 'meta', how: `Add to the page head: <meta name="pwamart-verification" content="${row.verify_token}">` },
-      { method: 'dns', how: `DNS TXT record _pwamart.${host} = pwamart-verification=${row.verify_token}` },
-    ],
+    options,
+    ...(shared && { note: `${host} is on ${shared}, whose DNS belongs to the platform, so prove it with the manifest, file or meta tag.` }),
   };
 }
 

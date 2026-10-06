@@ -43,7 +43,7 @@ export const sendClaimVerified = ({ email, publisher, apps, url }) =>
   send({
     to: email,
     subject: `${publisher} is yours on pwamart`,
-    text: `The DNS record checked out, so ${publisher} and its ${apps} app${apps === 1 ? '' : 's'} on pwamart now belong to your account.\n\nManage them here:\n\n${url}\n`,
+    text: `Your proof of the domain checked out, so ${publisher} and its ${apps} app${apps === 1 ? '' : 's'} on pwamart now belong to your account.\n\nManage them here:\n\n${url}\n`,
   });
 
 export const sendOrgInvite =({ email, orgName, url }) =>

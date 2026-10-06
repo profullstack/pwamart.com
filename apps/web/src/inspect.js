@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { resolveTxt } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { sharedHost } from './shared-hosts.js';
 
 /**
  * The PWA inspector: given a URL someone submitted, fetch it the way a browser
@@ -247,24 +248,40 @@ export async function inspect(rawUrl) {
 
 /* ------------------------------------------------------- domain ownership -- */
 
+/** The token an app's manifest carries: `"pwamart": { "verification": "<token>" }`. */
+export function manifestToken(manifest) {
+  const v = manifest?.pwamart?.verification;
+  return typeof v === 'string' ? v.trim() : null;
+}
+
 /**
- * Does the origin carry this token? Three ways, first match wins:
+ * Does the origin carry this token? Four ways, first match wins:
  *   https://<origin>/.well-known/pwamart.txt   containing the token
  *   <meta name="pwamart-verification" content="<token>"> on the submitted page
+ *   "pwamart": { "verification": "<token>" }   in the app's web app manifest
  *   DNS TXT  _pwamart.<host>  =  pwamart-verification=<token>
+ *
+ * DNS is never asked on a shared host (you.vercel.app): its owner cannot write
+ * that zone, so the answer could only ever come from the platform.
  */
-export async function verifyOrigin({ origin, url, token }) {
+export async function verifyOrigin({ origin, url, token, txt = resolveTxt }) {
   try {
     const f = await safeFetch(`${origin}/.well-known/pwamart.txt`, { maxBytes: 16 * 1024 });
     if (f.status < 400 && f.text.includes(token)) return 'well-known';
   } catch {}
   try {
     const p = await safeFetch(url, { accept: 'text/html' });
-    if (readHead(p.text, new URL(p.url)).verify === token) return 'meta';
+    const head = readHead(p.text, new URL(p.url));
+    if (head.verify === token) return 'meta';
+    if (head.manifest) {
+      const m = await safeFetch(head.manifest, { accept: 'application/manifest+json,application/json', maxBytes: 512 * 1024 });
+      if (m.status < 400 && manifestToken(JSON.parse(m.text.replace(/^﻿/, ''))) === token) return 'manifest';
+    }
   } catch {}
+  const host = new URL(origin).hostname;
+  if (sharedHost(host)) return null;
   try {
-    const host = new URL(origin).hostname;
-    const records = (await resolveTxt(`_pwamart.${host}`)).map((r) => r.join(''));
+    const records = (await txt(`_pwamart.${host}`)).map((r) => r.join(''));
     if (records.some((r) => r.trim() === `pwamart-verification=${token}`)) return 'dns';
   } catch {}
   return null;

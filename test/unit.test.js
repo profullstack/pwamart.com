@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { listingName, pickIcon, readHead } from '../apps/web/src/inspect.js';
+import { listingName, manifestToken, pickIcon, readHead } from '../apps/web/src/inspect.js';
+import { sharedHost } from '../apps/web/src/shared-hosts.js';
 import { summarizeNetwork } from '../apps/web/src/crawlproof.js';
 import { advertisePage, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
@@ -19,6 +20,20 @@ describe('inspector parsing', () => {
     expect(h.verify).toBe('abc');
     expect(h.title).toBe('X & Y');
     expect(h.registersServiceWorker).toBe(true);
+  });
+
+  test('a manifest carries its verification token under "pwamart"', () => {
+    expect(manifestToken({ name: 'x', pwamart: { verification: ' tok ' } })).toBe('tok');
+    expect(manifestToken({ pwamart: { verification: 42 } })).toBe(null);
+    expect(manifestToken(null)).toBe(null);
+  });
+
+  test('shared hosts are told apart from domains of their own', () => {
+    expect(sharedHost('me.vercel.app')).toBe('vercel.app');
+    expect(sharedHost('Docs.User.GitHub.io.')).toBe('github.io');
+    expect(sharedHost('github.io')).toBe('github.io');
+    expect(sharedHost('notvercel.app')).toBe(null);
+    expect(sharedHost('pwamart.com')).toBe(null);
   });
 
   test('listingName trims page-title style names', () => {

@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
 import { db, orgs } from '@pwamart/db';
 import { config } from './config.js';
-import { inspect } from './inspect.js';
+import { inspect, verifyOrigin } from './inspect.js';
+import { sharedHost } from './shared-hosts.js';
 import { sendClaimVerified } from './mail.js';
 
 /**
@@ -14,7 +15,9 @@ import { sendClaimVerified } from './mail.js';
  * description. Each becomes a published listing under an unclaimed publisher
  * that lives in a house org until someone proves the domain.
  *
- * A claim is a DNS TXT record at _pwamart.<domain>. The daemon checks pending
+ * A claim is a DNS TXT record at _pwamart.<domain>, or the same token on the site
+ * itself (its manifest, /.well-known/pwamart.txt or a meta tag), which is the only
+ * way on a shared host like you.vercel.app. The daemon checks pending
  * claims every 15 seconds for the first 10 minutes, then every 30, and gives up
  * after 7 days. DNS is asked of public resolvers, not the box's caching one, so
  * a record added a minute ago is seen.
@@ -254,11 +257,24 @@ export const setTxtLookup = (fn) => {
   txtLookup = fn;
 };
 
+let siteProof = verifyOrigin;
+/** Tests swap the site checks (manifest, file, meta) for a fake. */
+export const setSiteProof = (fn) => {
+  siteProof = fn ?? verifyOrigin;
+};
+
 export const claimRecord = (claim) => ({
   type: 'TXT',
   name: `_pwamart.${claim.domain}`,
   value: `pwamart-verification=${claim.token}`,
 });
+
+/** The proofs on the site itself, which work for any claim (and are all a shared host has). */
+export const claimAlternatives = (claim) => [
+  { method: 'manifest', how: `Add to your web app manifest: "pwamart": { "verification": "${claim.token}" }` },
+  { method: 'well-known', how: `Serve https://${claim.domain}/.well-known/pwamart.txt containing: ${claim.token}` },
+  { method: 'meta', how: `Add to the home page head: <meta name="pwamart-verification" content="${claim.token}">` },
+];
 
 export function shapeClaim(c, publisher) {
   const age = Date.now() - new Date(c.created_at).getTime();
@@ -267,7 +283,9 @@ export function shapeClaim(c, publisher) {
     publisher: publisher ?? undefined,
     domain: c.domain,
     status: c.status,
-    record: claimRecord(c),
+    // No DNS record to offer on a shared host: the platform owns that zone.
+    record: sharedHost(c.domain) ? null : claimRecord(c),
+    alternatives: claimAlternatives(c),
     checks: c.checks,
     last_checked_at: c.last_checked_at,
     next_check_at: c.next_check_at,
@@ -294,14 +312,29 @@ export async function startClaim({ user, publisherSlug, sql = db() }) {
 /** Check one claim's TXT record now and act on it. */
 export async function checkClaim(claim, sql = db()) {
   const record = claimRecord(claim);
+  const shared = sharedHost(claim.domain);
   let found = false;
-  let result;
-  try {
-    const rows = (await txtLookup(record.name)).map((r) => r.join('').trim());
-    found = rows.includes(record.value);
-    result = found ? 'found' : rows.length ? `TXT present but not ours (${rows.length})` : 'no TXT record yet';
-  } catch (err) {
-    result = err.code === 'ENOTFOUND' || err.code === 'ENODATA' ? 'no TXT record yet' : `dns: ${err.code ?? err.message}`;
+  let result = 'no proof yet';
+  let method = 'dns';
+  if (!shared) {
+    try {
+      const rows = (await txtLookup(record.name)).map((r) => r.join('').trim());
+      found = rows.includes(record.value);
+      result = found ? 'found' : rows.length ? `TXT present but not ours (${rows.length})` : 'no TXT record yet';
+    } catch (err) {
+      result = err.code === 'ENOTFOUND' || err.code === 'ENODATA' ? 'no TXT record yet' : `dns: ${err.code ?? err.message}`;
+    }
+  }
+  // The site itself can carry the same token: its manifest, /.well-known/pwamart.txt
+  // or a meta tag. The only way on a shared host, whose DNS belongs to the platform.
+  if (!found) {
+    const origin = `https://${claim.domain}`;
+    const site = await siteProof({ origin, url: `${origin}/`, token: claim.token, txt: async () => [] }).catch(() => null);
+    if (site) {
+      found = true;
+      method = site;
+      result = `found (${site})`;
+    }
   }
   if (!found) {
     const age = Date.now() - new Date(claim.created_at).getTime();
@@ -322,7 +355,7 @@ export async function checkClaim(claim, sql = db()) {
     const personal = await orgs.ensurePersonalOrg(tx, { userId: claim.user_id });
     await tx`update publishers set org_id = ${personal.id}, claimable = false, created_by = ${claim.user_id},
              bio = case when bio like 'Imported from %' then null else bio end where id = ${claim.publisher_id}`;
-    const apps = await tx`update apps set verified_at = now(), verified_by = 'dns', created_by = ${claim.user_id}
+    const apps = await tx`update apps set verified_at = now(), verified_by = ${method}, created_by = ${claim.user_id}
                           where publisher_id = ${claim.publisher_id} returning slug`;
     await tx`update publisher_claims set status = 'verified', verified_at = now(), last_checked_at = now(),
              last_result = 'found', checks = checks + 1 where id = ${claim.id}`;

@@ -58,6 +58,7 @@ beforeAll(async () => {
           display: 'standalone',
           description: `The ${name} app.`,
           categories: ['productivity'],
+          ...(name === 'mf' && { pwamart: { verification: 'mf-manifest-token' } }),
           icons: [
             { src: `/${name}/i192.png`, sizes: '192x192', type: 'image/png' },
             { src: `/${name}/i512.png`, sizes: '512x512', type: 'image/png' },
@@ -151,6 +152,18 @@ d('store end to end', () => {
     const s = await call('POST', '/apps', { url: `${base}/todo/`, publisher: 'alice-apps', category: 'utilities' });
     expect(s.body.verify.verified).toBe(true);
     expect((await call('POST', '/apps/todo/publish')).body.status).toBe('published');
+  });
+
+  test('the manifest proves an app; a shared host is never offered DNS', async () => {
+    const noDns = async () => [];
+    expect(await inspectMod.verifyOrigin({ origin: base, url: `${base}/mf/`, token: 'mf-manifest-token', txt: noDns })).toBe('manifest');
+    expect(await inspectMod.verifyOrigin({ origin: base, url: `${base}/mf/`, token: 'some-other-token', txt: noDns })).toBe(null);
+    const { verifyHelp } = await import('../apps/web/src/api.js');
+    const own = verifyHelp({ origin: 'https://notes.example', verify_token: 't' });
+    expect(own.options.map((o) => o.method)).toEqual(['manifest', 'well-known', 'meta', 'dns']);
+    const shared = verifyHelp({ origin: 'https://me.vercel.app', verify_token: 't' });
+    expect(shared.options.map((o) => o.method)).toEqual(['manifest', 'well-known', 'meta']);
+    expect(shared.note).toContain('vercel.app');
   });
 
   test('the public catalog lists, searches and shows published apps only', async () => {
@@ -364,6 +377,7 @@ d('saasrow import + DNS claims', () => {
 
     let txt = [];
     imports.setTxtLookup(async () => txt.map((t) => [t]));
+    imports.setSiteProof(async () => null);
     const pending = await gcall('POST', `/claims/${claim.id}/check`);
     expect(pending.body.claim.status).toBe('pending');
     expect(pending.body.claim.last_result).toBe('no TXT record yet');
@@ -379,6 +393,33 @@ d('saasrow import + DNS claims', () => {
     // Nobody else can claim it now.
     const hal = req((await keyFor('hal@example.test')).key);
     expect((await hal('POST', `/publishers/${pub.slug}/claim`)).status).toBe(409);
+  });
+
+  test('claim on a shared host: no DNS record, the token on the site proves it', async () => {
+    const [house] = await db()`select org_id from publishers limit 1`;
+    const [pub] = await db()`
+      insert into publishers (org_id, slug, name, claimable, claim_domain, source)
+      values (${house.org_id}, 'vercel-thing', 'Vercel Thing', true, 'thing.vercel.app', 'saasrow') returning id, slug`;
+    const ivy = req((await keyFor('ivy@example.test')).key);
+    const claim = (await ivy('POST', `/publishers/${pub.slug}/claim`)).body.claim;
+    expect(claim.record).toBe(null);
+    expect(claim.alternatives.map((o) => o.method)).toEqual(['manifest', 'well-known', 'meta']);
+    let dnsAsked = false;
+    imports.setTxtLookup(async () => {
+      dnsAsked = true;
+      return [];
+    });
+    let proof = null;
+    imports.setSiteProof(async ({ origin, token }) => (origin === 'https://thing.vercel.app' && token === proof ? 'manifest' : null));
+    expect((await ivy('POST', `/claims/${claim.id}/check`)).body.claim.status).toBe('pending');
+    const [row] = await db()`select * from publisher_claims where id = ${claim.id}`;
+    proof = row.token;
+    // "Check now" waits 5 seconds between checks; the daemon's path has no such wait.
+    expect((await imports.checkClaim(row)).status).toBe('verified');
+    const [after] = await db()`select claimable from publishers where id = ${pub.id}`;
+    expect(after.claimable).toBe(false);
+    expect(dnsAsked).toBe(false);
+    imports.setSiteProof(null);
   });
 });
 
