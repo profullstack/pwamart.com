@@ -25,7 +25,7 @@ export function view(state) {
     ui.column({ gap: 0 }, (root) => {
       root.row({ gap: 1, size: '1fr' }, (row) => {
         row.column({ size: '42%', gap: 0 }, (left) => {
-          left.panel({ title: 'pwamart · the app store for web apps', subtitle: `${state.list?.total ?? 0} apps`, titleColor: theme.accent }, (p) => {
+          left.panel({ title: 'pwamart · the app store for web apps', subtitle: `${state.list?.total ?? 0} apps`, titleColor: theme.accent, size: 4 }, (p) => {
             p.textInput({ value: state.q, placeholder: 'press / to search', focused: state.editing, label: 'search ' });
             p.text(`${cat ? cat.name : 'All categories'} · sorted by ${SORTS[state.sort]}`, { fg: theme.muted });
           });
@@ -33,7 +33,8 @@ export function view(state) {
             if (!apps.length) p.text(state.list ? 'Nothing matches.' : 'Loading…', { fg: theme.muted });
             else
               p.list({
-                items: apps.map((a) => ({ label: `${a.name.padEnd(24).slice(0, 24)} ${stars(a.rating).padEnd(5)}`, badge: a.category_name })),
+                // hqtui declares ListOptions.badge but does not draw it, so the category is part of the label.
+                items: apps.map((a) => ({ label: `${a.name.padEnd(22).slice(0, 22)} ${(a.category_name ?? "").padEnd(18).slice(0, 18)} ${a.rating ? stars(a.rating) : ""}` })),
                 selected: state.selected,
                 followSelection: true,
                 scrollbar: true,
@@ -52,8 +53,8 @@ export function view(state) {
           p.text(`by ${a.publisher.name}${a.publisher.verified ? ' ✓' : ''} · ${a.category_name}`, { fg: theme.muted });
           p.text(`${stars(a.rating)} (${a.rating_count})   ${a.installs} installs   PWA score ${a.score ?? '–'}%   ${a.verified ? 'verified' : 'unverified'}`);
           p.text('');
-          if (a.summary) p.text(a.summary, { fg: theme.accent });
-          p.text((a.description ?? '').slice(0, 900));
+          if (a.summary) p.text(a.summary, { fg: theme.accent, wrap: true });
+          p.text((a.description ?? '').slice(0, 900), { wrap: true });
           p.text('');
           p.text(`URL   ${a.start_url}`);
           p.text(`iOS   ${state.server ?? 'https://pwamart.com'}/apps/${a.slug}/install.mobileconfig`);
