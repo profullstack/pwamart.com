@@ -504,7 +504,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       </div>
       ${
         publisher
-          ? `<div class="panel"><h3>${e(publisher.name)} ${publisher.verified ? CHECK : ''}</h3>${publisher.bio ? `<p class="muted" style="margin:0 0 8px;font-size:14px">${e(publisher.bio)}</p>` : ''}<a href="/publishers/${e(publisher.slug)}">More from this publisher →</a></div>`
+          ? `<div class="panel"><h3 style="display:flex;gap:10px;align-items:center">${safeUrl(publisher.avatar_url) ? `<img src="${e(safeUrl(publisher.avatar_url))}" width="32" height="32" alt="" referrerpolicy="no-referrer" style="border-radius:8px;object-fit:cover">` : ''}${e(publisher.name)} ${publisher.verified ? CHECK : ''}</h3>${publisher.bio ? `<p class="muted" style="margin:0 0 8px;font-size:14px">${e(publisher.bio)}</p>` : ''}<a href="/publishers/${e(publisher.slug)}">More from this publisher →</a></div>`
           : ''
       }
       ${adSlot('app')}
@@ -529,11 +529,16 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
 export function publisherPage({ publisher, list, stats }) {
   const body = `<div class="wrap">
   <section class="block" style="padding-top:44px">
-    <div class="eyebrow">Publisher</div>
-    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(publisher.name)} ${publisher.verified ? CHECK.replace('class="verified"', 'class="verified" style="width:28px;height:28px"') : ''}</h1>
+    <div style="display:flex;gap:18px;align-items:center">
+      ${safeUrl(publisher.avatar_url) ? `<img class="icon" src="${e(safeUrl(publisher.avatar_url))}" width="88" height="88" alt="${e(publisher.name)} logo" referrerpolicy="no-referrer" style="border-radius:20px;object-fit:cover;flex:none">` : ''}
+      <div><div class="eyebrow">Publisher</div>
+      <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(publisher.name)} ${publisher.verified ? CHECK.replace('class="verified"', 'class="verified" style="width:28px;height:28px"') : ''}</h1></div>
+    </div>
+    ${publisher.verified ? `<p class="muted" style="margin:0 0 10px">Verified publisher${publisher.verified_domain ? `: proved it runs <b>${e(publisher.verified_domain)}</b>` : publisher.verified_by === 'staff' ? ': checked by pwamart staff' : ''}.</p>` : ''}
     ${publisher.claimable ? claimNote(publisher) : publisher.bio ? `<p class="lede">${e(publisher.bio)}</p>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">${followButton('publisher', publisher.slug, publisher.name)}<a class="btn sm" href="/publishers/${e(publisher.slug)}/feed.xml">RSS</a></div>
     ${safeUrl(publisher.website) ? `<p><a href="${e(safeUrl(publisher.website))}" rel="noopener" target="_blank">${e(publisher.website)}</a></p>` : ''}
+    ${publisher.claimable ? '' : `<p class="muted" style="font-size:13px">Yours? <a href="/console/publishers/${e(publisher.slug)}">Edit the logo and profile, or verify, in the console →</a></p>`}
   </section>
   <section class="block" style="padding-top:0"><div class="block-head"><h2>${e(list.total)} app${list.total === 1 ? '' : 's'}</h2></div>${grid(list.apps, 'No published apps yet.')}</section>
 </div>`;
@@ -815,7 +820,7 @@ const host = (u) => {
 export function publisherCard(p) {
   const tag = p.claimable ? '<span>unclaimed</span>' : p.verified ? '<span>verified</span>' : '';
   return `<a class="card" href="/publishers/${e(p.slug)}">
-  ${icon({ icon: p.icon, name: p.name })}
+  ${icon({ icon: p.avatar_url || p.icon, name: p.name })}
   <div class="body">
     <div class="name">${e(p.name)} ${p.verified ? CHECK : ''}</div>
     <div class="by">${e(host(p.website) || p.slug)}</div>

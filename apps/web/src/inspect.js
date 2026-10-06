@@ -102,7 +102,7 @@ const decode = (s) =>
 /** What the page's <head> says about itself. Regex, not a DOM: we only read tags. */
 export function readHead(html, base) {
   const tags = html.match(/<(link|meta)\b[^>]*>/gi) ?? [];
-  const out = { manifest: null, themeColor: null, description: null, appleIcon: null, icons: [], verify: null };
+  const out = { manifest: null, themeColor: null, description: null, appleIcon: null, icons: [], verify: null, ogImage: null, siteName: null };
   for (const t of tags) {
     const rel = (attr(t, 'rel') ?? '').toLowerCase().split(/\s+/);
     const name = (attr(t, 'name') ?? attr(t, 'property') ?? '').toLowerCase();
@@ -114,6 +114,12 @@ export function readHead(html, base) {
     if (name === 'theme-color' && content) out.themeColor ??= content;
     if ((name === 'description' || name === 'og:description') && content) out.description ??= content;
     if (name === 'pwamart-verification' && content) out.verify = content;
+    if (name === 'og:image' && content) {
+      try {
+        out.ogImage ??= new URL(content, base).href;
+      } catch {}
+    }
+    if ((name === 'og:site_name' || name === 'application-name') && content) out.siteName ??= content;
   }
   const title = html.match(/<title[^>]*>([^<]*)<\/title>/i);
   out.title = title ? decode(title[1].trim()) : null;

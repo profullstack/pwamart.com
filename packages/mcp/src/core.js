@@ -70,6 +70,22 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
+    name: 'fill_publisher',
+    description:
+      'Read a website and suggest a publisher name, logo and bio (from its manifest and page; the bio is written by AI only when the site has no description). Saves only when save is true. Needs an API key.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string', description: 'publisher slug' }, url: { type: 'string', description: 'website to read; defaults to the publisher website' }, save: { type: 'boolean' } },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'verify_publisher',
+    description: 'Prove the publisher runs its website (manifest token, /.well-known file, meta tag or DNS TXT). Without the token in place, returns how to add it. Needs an API key.',
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
     name: 'publish_app',
     description: 'Publish a verified, installable app to the store. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
@@ -149,6 +165,21 @@ export async function callTool(name, args, call, siteUrl) {
       return text(await call('/apps', json('POST', args)));
     case 'verify_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/verify`, json('POST')));
+    case 'fill_publisher': {
+      const p = `/publishers/${encodeURIComponent(args.slug)}`;
+      const { suggestion } = await call(`${p}/autofill`, json('POST', args.url ? { url: args.url } : {}));
+      if (!args.save) return text({ suggestion });
+      const saved = await call(p, json('PATCH', { website: suggestion.website, ...(suggestion.logo && { avatar_url: suggestion.logo }), ...(suggestion.bio && { bio: suggestion.bio }) }));
+      return text({ suggestion, publisher: saved.publisher });
+    }
+    case 'verify_publisher': {
+      const p = `/publishers/${encodeURIComponent(args.slug)}`;
+      try {
+        return text(await call(`${p}/verify`, json('POST')));
+      } catch {
+        return text(await call(`${p}/manage`));
+      }
+    }
     case 'publish_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/publish`, json('POST')));
     case 'feature_app':

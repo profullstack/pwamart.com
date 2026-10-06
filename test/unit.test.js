@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { listingName, manifestToken, pickIcon, readHead } from '../apps/web/src/inspect.js';
 import { sharedHost } from '../apps/web/src/shared-hosts.js';
+import { aiBio, pageText, pickLogo } from '../apps/web/src/profile.js';
 import { summarizeNetwork } from '../apps/web/src/crawlproof.js';
 import { advertisePage, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
@@ -34,6 +35,23 @@ describe('inspector parsing', () => {
     expect(sharedHost('github.io')).toBe('github.io');
     expect(sharedHost('notvercel.app')).toBe(null);
     expect(sharedHost('pwamart.com')).toBe(null);
+  });
+
+  test('a publisher logo prefers the manifest icon, then apple-touch, then a favicon, then og:image', () => {
+    const head = { appleIcon: 'https://a.example/apple.png', icons: ['https://a.example/favicon.ico', 'https://a.example/icon.svg'], ogImage: 'https://a.example/og.jpg' };
+    expect(pickLogo({ manifest: { icons: [{ src: 'https://a.example/512.png', sizes: '512x512' }] }, head })).toEqual({ src: 'https://a.example/512.png', from: 'manifest' });
+    expect(pickLogo({ manifest: null, head }).from).toBe('apple-touch-icon');
+    expect(pickLogo({ manifest: null, head: { ...head, appleIcon: null } })).toEqual({ src: 'https://a.example/icon.svg', from: 'favicon' });
+    expect(pickLogo({ manifest: null, head: { icons: [], ogImage: 'https://a.example/og.jpg' } }).from).toBe('og:image');
+    expect(pickLogo({ manifest: null, head: { icons: [] } })).toBe(null);
+  });
+
+  test('page text for a bio drops scripts and tags; no key means no AI bio', async () => {
+    expect(pageText('<style>x{}</style><h1>Acme</h1><script>evil()</script><p>We make&nbsp;tools &amp; more.</p>')).toBe('Acme We make tools & more.');
+    const key = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(await aiBio({ name: 'Acme', url: 'https://a.example', text: 'Acme makes tools.' })).toBe(null);
+    if (key) process.env.ANTHROPIC_API_KEY = key;
   });
 
   test('listingName trims page-title style names', () => {

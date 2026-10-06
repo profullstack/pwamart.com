@@ -104,6 +104,7 @@ async function route() {
     if (p === '/console/apps') return appsList();
     if (p.startsWith('/console/apps/')) return appDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/publishers') return publishers();
+    if (p.startsWith('/console/publishers/')) return publisherDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/orgs') return orgsPage();
     if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/billing') return billing();
@@ -415,12 +416,103 @@ async function publishers() {
     ${
       me.publishers.length
         ? `<div class="table-wrap" style="margin-bottom:28px"><table class="table"><thead><tr><th>Publisher</th><th>Org</th><th>Apps</th><th></th></tr></thead><tbody>
-      ${me.publishers.map((p) => `<tr><td><b>${esc(p.name)}</b> ${p.verified ? '✓' : ''}<br><small class="muted">/publishers/${esc(p.slug)}</small></td><td>${esc(p.org_name)}</td><td>${p.apps}</td><td><a href="/publishers/${esc(p.slug)}" target="_blank">Public page ↗</a></td></tr>`).join('')}
+      ${me.publishers.map((p) => `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap">${p.avatar_url ? `<img src="${esc(p.avatar_url)}" width="36" height="36" alt="" style="border-radius:9px;object-fit:cover" referrerpolicy="no-referrer">` : '<span class="pill">no logo</span>'}<div><a href="/console/publishers/${esc(p.slug)}"><b>${esc(p.name)}</b></a> ${p.verified ? '<span class="pill published">verified</span>' : '<span class="pill">unverified</span>'}<br><small class="muted">/publishers/${esc(p.slug)}</small></div></div></td><td>${esc(p.org_name)}</td><td>${p.apps}</td><td><a class="btn sm" href="/console/publishers/${esc(p.slug)}">Edit &amp; verify</a> <a href="/publishers/${esc(p.slug)}" target="_blank">Public page ↗</a></td></tr>`).join('')}
     </tbody></table></div>`
         : ''
     }
     <h2 style="margin-bottom:12px">New publisher</h2>${publisherForm(me.orgs)}`;
   bindPublisherForm(() => publishers());
+}
+
+async function publisherDetail(slug) {
+  const { publisher: p, verify } = await api(`/publishers/${encodeURIComponent(slug)}/manage`);
+  const how = { manifest: 'the web app manifest', 'well-known': 'the /.well-known file', meta: 'the meta tag', dns: 'DNS', staff: 'pwamart staff', app: 'a verified app on the same domain' };
+  view.innerHTML = `<div class="page-head"><div class="row" style="flex-wrap:nowrap">
+      <img id="logo-preview" class="icon" width="64" height="64" alt="" referrerpolicy="no-referrer" style="border-radius:14px;object-fit:cover;${p.avatar_url ? '' : 'display:none'}" ${p.avatar_url ? `src="${esc(p.avatar_url)}"` : ''}>
+      <div><div class="eyebrow">Publisher</div><h1>${esc(p.name)}</h1></div></div>
+      <div class="row">${p.verified ? `<span class="pill published">verified${p.verified_domain ? ` · ${esc(p.verified_domain)}` : ''}</span>` : '<span class="pill">unverified</span>'}
+      <a class="btn sm" href="/publishers/${esc(p.slug)}" target="_blank">Public page ↗</a></div></div>
+
+    <div class="panel" style="margin-bottom:18px"><h3>Profile</h3>
+      <p class="muted">Paste your website and press Fill: we read its manifest and page for your name, logo and description. Check it, then Save.</p>
+      <form class="stack" id="pf">
+        <label class="f">Website<div class="row" style="flex-wrap:nowrap"><input name="website" type="url" placeholder="https://your.site" value="${esc(p.website ?? '')}" style="flex:1"><button class="btn" type="button" id="fill">Fill from website</button></div></label>
+        <label class="f">Name<input name="name" required maxlength="80" value="${esc(p.name)}"></label>
+        <label class="f">Logo URL <small class="muted">square, 128px or larger; https</small><input name="avatar_url" type="url" placeholder="https://your.site/icon-512.png" value="${esc(p.avatar_url ?? '')}"></label>
+        <label class="f">Bio<textarea name="bio" rows="3" maxlength="1000">${esc(p.bio ?? '')}</textarea></label>
+        <div class="row"><button class="btn dark">Save</button><span id="pmsg"></span></div>
+      </form>
+    </div>
+
+    <div class="panel" style="margin-bottom:18px"><h3>Verify ${esc(verify.domain ?? 'your website')}</h3>
+      ${
+        p.verified
+          ? `<p><span class="ok-msg">Verified${p.verified_by ? ` by ${esc(how[p.verified_by] ?? p.verified_by)}` : ''}${p.verified_domain ? ` for ${esc(p.verified_domain)}` : ''}.</span> Your publisher page and every listing show the verified badge.</p>`
+          : `<p class="muted">A verified publisher gets the badge on its page and every listing. Do any one of these on ${esc(verify.domain ?? 'your website')}, then press Verify.${verify.note ? ` ${esc(verify.note)}` : ''}</p>
+        ${verify.options.map((o) => `<p style="margin:10px 0 4px"><b>${esc(o.method)}</b></p><div class="code-block">${esc(o.how)}</div>`).join('')}
+        <p class="muted" style="font-size:13px">Already verified an app on this same domain? Press Verify: that counts.</p>
+        <div class="row" style="margin-top:14px"><button class="btn dark" id="pverify" ${p.website ? '' : 'disabled'}>Verify</button>${me.user.admin ? '<button class="btn" id="pstaff">Verify (staff)</button>' : ''}<span id="vmsg"></span></div>`
+      }
+    </div>`;
+
+  const form = $('#pf');
+  const fld = (n) => form.elements.namedItem(n); // not form.name: that is the form's own attribute
+  const preview = () => {
+    const u = fld('avatar_url').value.trim();
+    const img = $('#logo-preview');
+    if (/^https:\/\//i.test(u)) {
+      img.src = u;
+      img.style.display = '';
+    } else img.style.display = 'none';
+  };
+  fld('avatar_url').addEventListener('input', preview);
+  $('#fill').addEventListener('click', async () => {
+    const url = fld('website').value.trim();
+    if (!url) return ($('#pmsg').innerHTML = '<span class="muted">Type your website first.</span>');
+    $('#pmsg').innerHTML = '<span class="muted">Reading your site…</span>';
+    try {
+      const { suggestion: s } = await api(`/publishers/${encodeURIComponent(slug)}/autofill`, { method: 'POST', body: { url } });
+      // Fill what the site gave; keep anything the publisher already typed for name.
+      fld('website').value = s.website ?? url;
+      if (s.logo) fld('avatar_url').value = s.logo;
+      if (s.bio && !fld('bio').value.trim()) fld('bio').value = s.bio;
+      else if (s.bio && fld('bio').value.trim() !== s.bio && confirm(`Replace your bio with this?\n\n${s.bio}`)) fld('bio').value = s.bio;
+      if (s.name && (!fld('name').value.trim() || fld('name').value === p.name) && s.name !== fld('name').value && confirm(`Use "${s.name}" as the name?`)) fld('name').value = s.name;
+      preview();
+      const got = [s.logo && `logo (${s.logo_source})`, s.bio && `bio (${s.bio_source === 'ai' ? 'written by AI from your page' : 'from your site'})`].filter(Boolean);
+      $('#pmsg').innerHTML = `<span class="muted">${got.length ? `Filled ${esc(got.join(', '))}. Check it, then Save.` : 'Your site has no icon or description we could use; fill them in by hand.'}</span>`;
+    } catch (err) {
+      $('#pmsg').innerHTML = errBox(err);
+    }
+  });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(form));
+    try {
+      const r = await api(`/publishers/${encodeURIComponent(slug)}`, { method: 'PATCH', body: d });
+      await refreshMe();
+      if (r.notice) alert(r.notice);
+      publisherDetail(slug);
+    } catch (err) {
+      $('#pmsg').innerHTML = errBox(err);
+    }
+  });
+  $('#pverify')?.addEventListener('click', async () => {
+    $('#vmsg').innerHTML = '<span class="muted">Checking…</span>';
+    try {
+      const r = await api(`/publishers/${encodeURIComponent(slug)}/verify`, { method: 'POST' });
+      $('#vmsg').innerHTML = `<span class="ok-msg">Verified by ${esc(how[r.method] ?? r.method)}.</span>`;
+      await refreshMe();
+      setTimeout(() => publisherDetail(slug), 600);
+    } catch (err) {
+      $('#vmsg').innerHTML = errBox(err);
+    }
+  });
+  $('#pstaff')?.addEventListener('click', async () => {
+    await api(`/admin/publishers/${encodeURIComponent(slug)}`, { method: 'POST', body: { verified: true } });
+    await refreshMe();
+    publisherDetail(slug);
+  });
 }
 
 /* ----------------------------------------------------------------- orgs -- */
