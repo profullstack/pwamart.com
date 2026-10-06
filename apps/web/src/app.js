@@ -9,7 +9,8 @@ import { categoryCounts, getApp, getPublisher, listApps, reviewsFor, shape } fro
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { appPage, browsePage, developersPage, homePage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { appPage, browsePage, developersPage, featuredPage, homePage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import * as newsletter from './newsletter.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUB = join(here, '..', 'public');
@@ -139,6 +140,64 @@ app.get('/publishers/:slug', async (c) => {
 
 app.get('/pricing', async (c) => html(c, pricingPage({ stats: await stats() })));
 app.get('/developers', async (c) => html(c, developersPage({ stats: await stats() })));
+
+/* -------------------------------------------------- featured + newsletter -- */
+
+app.get('/featured', async (c) => {
+  const [featured, counts] = configured() ? await Promise.all([listApps({ featured: true, limit: 12 }), newsletter.subscriberCounts()]) : [{ apps: [] }, { active: 0 }];
+  return html(
+    c,
+    featuredPage({
+      stats: await stats(),
+      featured: featured.apps,
+      subscribers: counts.active,
+      priceCents: newsletter.FEATURED.priceCents,
+      days: newsletter.FEATURED.days,
+    }),
+  );
+});
+
+// Pages that answer one person's action are never cached.
+const personal = (c, page, status = 200) => c.html(page, status, { 'cache-control': 'no-store' });
+
+app.get('/newsletter', async (c) => html(c, newsletterPage({ stats: await stats() })));
+app.post('/newsletter', async (c) => {
+  const form = await c.req.parseBody().catch(() => ({}));
+  const r = await newsletter.subscribe(form.email, { source: String(form.source ?? 'site') });
+  return personal(
+    c,
+    newsletterPage({
+      stats: await stats(),
+      notice: r.ok ? 'Almost there: tap the link in the email we just sent to confirm.' : r.error,
+      tone: r.ok ? '' : 'bad',
+    }),
+    r.ok ? 200 : 400,
+  );
+});
+app.get('/newsletter/confirm', async (c) => {
+  const row = await newsletter.confirm(c.req.query('t'));
+  return personal(
+    c,
+    newsletterPage({
+      stats: await stats(),
+      notice: row ? `You're in. ${row.email} gets the next issue.` : 'That confirmation link is not valid. Subscribe again below.',
+      tone: row ? '' : 'bad',
+    }),
+    row ? 200 : 404,
+  );
+});
+app.get('/newsletter/unsubscribe', async (c) => {
+  const row = await newsletter.unsubscribe(c.req.query('t'));
+  return personal(
+    c,
+    newsletterPage({
+      stats: await stats(),
+      notice: row ? `${row.email} is off the list. No more issues.` : 'That unsubscribe link is not valid.',
+      tone: row ? '' : 'bad',
+    }),
+    row ? 200 : 404,
+  );
+});
 app.get('/healthz', (c) => c.text('ok'));
 
 /* -------------------------------------------------- console (the SPA) -- */
@@ -266,6 +325,8 @@ app.get('/sitemap.xml', async (c) => {
     u('/apps'),
     u('/pricing'),
     u('/developers'),
+    u('/featured'),
+    u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
     ...pubs.map((p) => u(`/publishers/${p.slug}`)),
@@ -298,6 +359,12 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
+- POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue
+- GET  /apps/:slug/featured                featured state, owed newsletter slot
+- POST /newsletter/subscribe {email}       double opt-in (public)
+
+## Get featured
+$19, paid once in crypto: ${config.siteUrl}/featured. Newsletter: ${config.siteUrl}/newsletter
 
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)

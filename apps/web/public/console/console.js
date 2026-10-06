@@ -100,6 +100,7 @@ async function route() {
     if (p === '/console/orgs') return orgsPage();
     if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/billing') return billing();
+    if (p === '/console/feature') return featurePick();
     if (p === '/console/keys') return keys();
     if (p.startsWith('/console/claim/')) return claimView(decodeURIComponent(p.split('/')[3]));
     view.innerHTML = '<p>Not found. <a href="/console">Back to the console</a></p>';
@@ -284,6 +285,8 @@ async function appDetail(slug) {
       <span id="pmsg"></span>
     </div>
 
+    ${app.status === 'published' ? '<div class="panel" id="featured-panel" style="margin-bottom:22px"><p class="muted">Loading…</p></div>' : ''}
+
     <h2 style="margin-bottom:12px">Listing</h2>
     <form class="stack" id="edit">
       <label class="f">Name<input name="name" value="${esc(app.name)}" maxlength="80"></label>
@@ -332,6 +335,7 @@ async function appDetail(slug) {
     await api(`/admin/apps/${slug}`, { method: 'POST', body: { featured: !app.featured } });
     appDetail(slug);
   });
+  if (app.status === 'published') featuredPanel(slug);
   act('#staffverify', async () => {
     await api(`/admin/apps/${slug}`, { method: 'POST', body: { verified: true } });
     appDetail(slug);
@@ -666,3 +670,73 @@ async function keys() {
 }
 
 route();
+
+/* -------------------------------------------------------------- featured -- */
+
+const day = (d) => new Date(d).toISOString().slice(0, 10);
+
+/** Get featured for $19: a week on the home page plus the next newsletter. Paid in crypto. */
+async function featuredPanel(slug) {
+  const box = $('#featured-panel');
+  if (!box) return;
+  const paid = new URLSearchParams(location.search).get('featured') === '1';
+  let st;
+  try {
+    st = await api(`/apps/${encodeURIComponent(slug)}/featured`);
+  } catch (err) {
+    box.innerHTML = errBox(err);
+    return;
+  }
+  const price = `$${st.price_cents / 100}`;
+  const now = st.featured
+    ? `<p class="ok-msg">Featured${st.featured_until ? ` until ${esc(day(st.featured_until))}` : ' (staff pick)'}.${st.newsletter_owed ? ' In the next newsletter issue.' : ''}</p>`
+    : st.newsletter_owed
+      ? '<p class="ok-msg">In the next newsletter issue.</p>'
+      : '';
+  box.innerHTML = `<div class="row" style="justify-content:space-between"><h3>Get featured · ${esc(price)}</h3><a class="btn sm" href="/featured" target="_blank">How it works ↗</a></div>
+    <p class="muted">${esc(st.days)} days on the home page's Featured row and at the top of the store, plus a slot in the next pwamart newsletter. One payment in crypto through CoinPay${st.featured && st.featured_until ? '; buying again adds the time on' : ''}.</p>
+    ${now}
+    <div class="row"><button class="btn primary" id="buy-feature" ${st.payments_enabled ? '' : 'disabled'}>${st.featured ? 'Add 7 more days' : `Feature it for ${esc(price)}`}</button><span id="fmsg"></span></div>`;
+  $('#buy-feature').addEventListener('click', async () => {
+    $('#buy-feature').disabled = true;
+    $('#fmsg').innerHTML = '<span class="muted">Opening CoinPay…</span>';
+    try {
+      const r = await api(`/apps/${encodeURIComponent(slug)}/feature`, { method: 'POST' });
+      location.assign(r.checkout_url);
+    } catch (err) {
+      $('#fmsg').innerHTML = errBox(err);
+      $('#buy-feature').disabled = false;
+    }
+  });
+  // Back from CoinPay: wait for the webhook to land, the same way billing does.
+  if (paid && !st.featured && !st.newsletter_owed) {
+    $('#fmsg').innerHTML = '<span class="muted">Waiting for the payment to settle…</span>';
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const again = await api(`/apps/${encodeURIComponent(slug)}/featured`).catch(() => null);
+      if (again && (again.featured || again.newsletter_owed)) {
+        history.replaceState({}, '', `/console/apps/${slug}`);
+        return featuredPanel(slug);
+      }
+    }
+    $('#fmsg').innerHTML = '<span class="muted">Still waiting on CoinPay. This page updates when the payment settles; reload in a minute.</span>';
+  }
+}
+
+/** /console/feature: pick which of your live apps to feature. */
+async function featurePick() {
+  const { apps } = await api('/me/apps');
+  const live = apps.filter((a) => a.status === 'published');
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">$19 · 7 days + the newsletter</div><h1>Get featured</h1></div></div>
+    <p class="muted">Pick a live app. You pay once in crypto through CoinPay, and it goes on the home page's Featured row and into the next newsletter as soon as the payment settles.</p>
+    ${
+      live.length
+        ? `<div class="stack">${live
+            .map(
+              (a) => `<div class="panel row" style="justify-content:space-between"><div class="row">${a.icon ? `<img class="icon" src="${esc(a.icon)}" width="40" height="40" alt="" referrerpolicy="no-referrer">` : ''}<b>${esc(a.name)}</b>${a.featured ? ' <span class="pill published">featured</span>' : ''}</div>
+              <a class="btn primary sm" href="/console/apps/${esc(a.slug)}#featured-panel">Feature it</a></div>`,
+            )
+            .join('')}</div>`
+        : '<p>No live apps yet. <a href="/console/submit">List one</a>, publish it, then come back.</p>'
+    }`;
+}

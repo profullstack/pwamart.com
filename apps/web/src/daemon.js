@@ -2,6 +2,7 @@ import { db } from '@pwamart/db';
 import { dueReminders, markReminded } from './billing.js';
 import { config } from './config.js';
 import { sendRenewalReminder } from './mail.js';
+import { expireFeatured, sendBatch } from './newsletter.js';
 
 /**
  * The background loop inside the web process: one timer, several jobs, each with
@@ -101,3 +102,10 @@ addJob('saasrow-import', 20 * 60_000, async () => {
   const r = await runSaasrowImport();
   console.log(`[daemon] saasrow-import ${JSON.stringify(r)}`);
 });
+
+/* ------------------------------------------------- featured + newsletter -- */
+
+// A paid feature comes off the home page when its week is up (staff picks never do).
+addJob('featured-expiry', 10 * 60_000, () => expireFeatured());
+// A queued issue goes out 50 subscribers a minute, each delivery claimed before it is sent.
+addJob('newsletter-send', 60_000, () => sendBatch());

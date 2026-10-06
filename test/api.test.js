@@ -481,3 +481,179 @@ d('billing: periods, upgrades, downgrades, cancel', () => {
     expect((await app.request('/console/billing')).status).toBe(200);
   });
 });
+
+d('get featured for $19 + the newsletter', () => {
+  let owner, call, staff, mock, slug;
+  const created = [];
+  // A settled CoinPay webhook for a featured purchase, as the real one arrives.
+  async function payFeatured(ref, meta) {
+    const payload = JSON.stringify({ type: 'payment.confirmed', data: { payment_id: ref, status: 'confirmed', metadata: meta } });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = createHmac('sha256', 'whsec_test').update(`${t}.${payload}`).digest('hex');
+    const res = await app.request('/webhooks/coinpay', { method: 'POST', headers: { 'content-type': 'application/json', 'x-coinpay-signature': `t=${t},v1=${sig}` }, body: payload });
+    return (await res.json()).result;
+  }
+
+  beforeAll(async () => {
+    if (!HAS_DB) return;
+    // CoinPay's create-payment endpoint, so the checkout runs for real against it.
+    mock = Bun.serve({
+      port: 0,
+      async fetch(r) {
+        const b = await r.json();
+        created.push(b);
+        const id = `pay_${randomBytes(6).toString('hex')}`;
+        return Response.json({ payment: { id } });
+      },
+    });
+    process.env.COINPAY_API_URL = `http://localhost:${mock.port}`;
+    const k = await keyFor('erin@example.test');
+    owner = k.user;
+    call = req(k.key);
+    staff = req((await keyFor('staff@example.test')).key);
+    expect((await call('POST', '/publishers', { name: 'Erin Studio' })).status).toBe(201);
+    const s = await call('POST', '/apps', { url: `${base}/gallery/`, publisher: 'erin-studio' });
+    expect(s.status).toBe(201);
+    slug = s.body.app.slug;
+  });
+  afterAll(() => {
+    mock?.stop(true);
+    delete process.env.COINPAY_API_URL;
+  });
+
+  test('only a live listing can be featured, and only by its owner', async () => {
+    expect((await call('POST', `/apps/${slug}/feature`)).status).toBe(409);
+    expect((await staff('POST', `/admin/apps/${slug}`, { verified: true })).status).toBe(200);
+    expect((await call('POST', `/apps/${slug}/publish`)).status).toBe(200);
+    const stranger = req((await keyFor('mallory@example.test')).key);
+    expect((await stranger('POST', `/apps/${slug}/feature`)).status).toBe(404);
+    expect((await req(null)('POST', `/apps/${slug}/feature`)).status).toBe(401);
+  });
+
+  test('checkout: $19, crypto only, the app in the metadata, back to the console', async () => {
+    const r = await call('POST', `/apps/${slug}/feature`);
+    expect(r.status).toBe(200);
+    expect(r.body.price_cents).toBe(1900);
+    expect(r.body.checkout_url).toContain('/pay/');
+    const sent = created.at(-1);
+    expect(sent.amount).toBe(19);
+    expect(sent.payment_method).toBe('crypto');
+    expect(sent.metadata.product).toBe('featured');
+    expect(sent.metadata.app_slug).toBe(slug);
+    expect(sent.success_url).toContain(`/console/apps/${slug}?featured=1`);
+    const st = await call('GET', `/apps/${slug}/featured`);
+    expect(st.body.featured).toBe(false);
+    expect(st.body.newsletter_owed).toBe(false);
+  });
+
+  test('the settled webhook features the app for 7 days and owes it a newsletter slot, once', async () => {
+    const [row] = await db()`select provider_ref, raw from payments where user_id = ${owner.id} order by created_at desc limit 1`;
+    const meta = created.at(-1).metadata;
+    const first = await payFeatured(row.provider_ref, meta);
+    expect(first.result.featured).toBe(true);
+    const again = await payFeatured(row.provider_ref, meta);
+    expect(again.result.already).toBe(true);
+    const st = (await call('GET', `/apps/${slug}/featured`)).body;
+    expect(st.featured).toBe(true);
+    expect(st.newsletter_owed).toBe(true);
+    const days = (new Date(st.featured_until) - Date.now()) / 86400_000;
+    expect(days > 6.9 && days < 7.1).toBe(true);
+    expect((await req(null)('GET', '/apps?featured=1')).body.apps.some((a) => a.slug === slug)).toBe(true);
+    const billing = (await call('GET', '/billing')).body.payments;
+    expect(billing.some((p) => p.product === 'featured' && p.applied)).toBe(true);
+  });
+
+  test('a second purchase adds 7 days onto the running feature', async () => {
+    await call('POST', `/apps/${slug}/feature`);
+    const [row] = await db()`select provider_ref from payments where user_id = ${owner.id} order by created_at desc limit 1`;
+    await payFeatured(row.provider_ref, created.at(-1).metadata);
+    const days = (new Date((await call('GET', `/apps/${slug}/featured`)).body.featured_until) - Date.now()) / 86400_000;
+    expect(days > 13.9 && days < 14.1).toBe(true);
+  });
+
+  test('a payment recorded short of $19 grants nothing', async () => {
+    const ref = `pay_${randomBytes(6).toString('hex')}`;
+    await db()`insert into payments (user_id, provider, provider_ref, amount_cents, status) values (${owner.id}, 'coinpay', ${ref}, 100, 'pending')`;
+    const r = await payFeatured(ref, { user_id: owner.id, product: 'featured', app_id: created.at(-1).metadata.app_id, app_slug: slug });
+    expect(r.result ?? null).toBe(null);
+    expect((await db()`select count(*)::int as n from featured_slots where payment_id = (select id from payments where provider_ref = ${ref})`)[0].n).toBe(0);
+  });
+
+  test('expiry takes a paid feature down; a staff pick stays', async () => {
+    const { expireFeatured } = await import('../apps/web/src/newsletter.js');
+    await db()`update apps set featured_until = now() - interval '1 minute' where slug = ${slug}`;
+    expect(await expireFeatured()).toBe(1);
+    expect((await call('GET', `/apps/${slug}/featured`)).body.featured).toBe(false);
+    // 'notes' was featured by staff earlier: no end date, never expires.
+    expect(await expireFeatured()).toBe(0);
+    expect((await db()`select featured from apps where slug = 'notes'`)[0].featured).toBe(true);
+  });
+
+  test('newsletter: subscribe, confirm, draft with the paid app first, send once, unsubscribe', async () => {
+    const nl = await import('../apps/web/src/newsletter.js');
+    // The form answers the same for a new and a repeat address.
+    const form = (email) => app.request('/newsletter', { method: 'POST', body: new URLSearchParams({ email, source: 'test' }) });
+    expect((await form('reader@example.test')).status).toBe(200);
+    expect((await form('reader@example.test')).status).toBe(200);
+    expect((await form('not-an-email')).status).toBe(400);
+    expect((await req(null)('POST', '/newsletter/subscribe', { email: 'second@example.test' })).status).toBe(200);
+    const [r1] = await db()`select token from newsletter_subscribers where email = 'reader@example.test'`;
+    expect((await app.request(`/newsletter/confirm?t=${r1.token}`)).status).toBe(200);
+    expect((await app.request('/newsletter/confirm?t=nope')).status).toBe(404);
+    expect((await nl.subscriberCounts()).active).toBe(1);
+
+    // Staff only.
+    expect((await call('POST', '/admin/newsletter/issues', {})).status).toBe(404);
+    const draft = await staff('POST', '/admin/newsletter/issues', { subject: 'pwamart this week' });
+    expect(draft.status).toBe(201);
+    expect(draft.body.issue.featured).toEqual([slug]);
+    expect(draft.body.issue.body.indexOf(`/apps/${slug}`)).toBeLessThan(draft.body.issue.body.indexOf('NEW THIS WEEK') === -1 ? Infinity : draft.body.issue.body.indexOf('NEW THIS WEEK'));
+    expect((await call('GET', `/apps/${slug}/featured`)).body.newsletter_owed).toBe(false);
+    // The next draft does not repeat a slot this one claimed.
+    const second = await staff('POST', '/admin/newsletter/issues', {});
+    expect(second.body.issue.featured).toEqual([]);
+
+    const id = draft.body.issue.id;
+    expect((await staff('PATCH', `/admin/newsletter/issues/${id}`, { body: 'Edited body.' })).body.issue.body).toBe('Edited body.');
+    expect((await staff('POST', `/admin/newsletter/issues/${id}/send`)).status).toBe(200);
+    expect((await staff('POST', `/admin/newsletter/issues/${id}/send`)).status).toBe(409);
+    expect((await staff('PATCH', `/admin/newsletter/issues/${id}`, { body: 'too late' })).status).toBe(409);
+
+    const mails = [];
+    const mail = async (m) => mails.push(m);
+    expect(await nl.sendBatch({ mail })).toBe(1);
+    expect(mails[0].to).toBe('reader@example.test');
+    expect(mails[0].text).toContain('Edited body.');
+    expect(mails[0].text).toContain('/newsletter/unsubscribe?t=');
+    expect(await nl.sendBatch({ mail })).toBe(0); // nobody left: marks the issue sent
+    expect((await nl.getIssue(id)).status).toBe('sent');
+    expect(mails.length).toBe(1);
+
+    expect((await app.request(`/newsletter/unsubscribe?t=${r1.token}`)).status).toBe(200);
+    expect((await nl.subscriberCounts()).active).toBe(0);
+  });
+
+  test('the pages: /featured sells it, /newsletter takes a subscription, the app shows its badge', async () => {
+    const f = await (await app.request('/featured')).text();
+    expect(f).toContain('Get featured on pwamart and in our newsletter for $19');
+    expect(f).toContain('action="/newsletter"');
+    expect((await app.request('/newsletter')).status).toBe(200);
+    const home = await (await app.request('/')).text();
+    expect(home).toContain('href="/featured"');
+    const notes = await (await app.request('/apps/notes')).text();
+    expect(notes).toContain('★ Featured');
+    const llms = await (await app.request('/llms.txt')).text();
+    expect(llms).toContain('/apps/:slug/feature');
+  });
+
+  test('MCP: feature_app and subscribe_newsletter', async () => {
+    const rpc = async (body, key) =>
+      (await app.request('/mcp', { method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(body) })).json();
+    const list = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const names = list.result.tools.map((t) => t.name);
+    expect(names).toContain('feature_app');
+    expect(names).toContain('subscribe_newsletter');
+    const sub = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'subscribe_newsletter', arguments: { email: 'agent@example.test' } } });
+    expect(JSON.parse(sub.result.content[0].text).ok).toBe(true);
+  });
+});
