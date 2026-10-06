@@ -19,6 +19,19 @@ export const config = {
       .filter(Boolean);
   },
   session: { cookie: 'pm_session', ttlDays: 30 },
+  // Sign in with CoinPay (the house OIDC provider). Client registered 2026-10-06;
+  // id + secret live in the pwamart--prod vault.
+  coinpayOAuth: {
+    get issuer() {
+      return env('COINPAY_OAUTH_ISSUER', 'https://coinpayportal.com').replace(/\/$/, '');
+    },
+    get clientId() {
+      return env('COINPAY_OAUTH_CLIENT_ID');
+    },
+    get clientSecret() {
+      return env('COINPAY_OAUTH_CLIENT_SECRET');
+    },
+  },
   // CrawlProof (Profullstack, Inc. org): traffic via stats.js, one text-link ad slot.
   // Both ids are public (they ship in the page); env overrides for another project.
   crawlproof: {

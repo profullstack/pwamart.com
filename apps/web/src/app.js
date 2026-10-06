@@ -7,6 +7,7 @@ import { api, coinpayWebhook } from './api.js';
 import * as auth from './auth.js';
 import { getCookie } from 'hono/cookie';
 import { mountOAuth } from './oauth.js';
+import { mountCoinPaySignin } from './coinpay-signin.js';
 import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
@@ -277,6 +278,8 @@ app.post('/webhooks/coinpay', coinpayWebhook);
 
 // OAuth 2.1 for the CLI, TUI and stdio MCP (shared house code: @profullstack/auth-system/oauth2).
 mountOAuth(app);
+// Sign in with CoinPay on the web (shared house code: @profullstack/stack/coinpay).
+mountCoinPaySignin(app);
 
 /* --------------------------------------------------------------------- API -- */
 

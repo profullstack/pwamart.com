@@ -215,7 +215,7 @@ api.get('/me', async (c) => {
     db()`select count(*)::int as n from passkeys where user_id = ${user.id}`,
   ]);
   return c.json({
-    user: { id: user.id, email: user.email, name: user.name, admin: user.is_admin, passkeys: passkeys[0].n },
+    user: { id: user.id, email: user.email, name: user.name, admin: user.is_admin, passkeys: passkeys[0].n, coinpay: Boolean(user.coinpay_sub) },
     plan,
     usage,
     orgs: myOrgs.map((o) => ({ id: o.id, slug: o.slug, name: o.name, personal: o.is_personal, role: o.role })),
