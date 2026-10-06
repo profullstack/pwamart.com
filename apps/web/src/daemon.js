@@ -24,6 +24,13 @@ function hash(s) {
   return h;
 }
 
+let lockConn = null;
+/** The one connection the daemon's advisory locks are taken on (session locks are per connection). */
+async function lockConnection() {
+  lockConn ??= db().reserve();
+  return lockConn;
+}
+
 async function tick() {
   const now = Date.now();
   for (const job of jobs) {
@@ -31,20 +38,22 @@ async function tick() {
     job.running = true;
     job.lastRun = now;
     (async () => {
-      const sql = db();
-      const reserved = await sql.reserve();
       try {
-        const [{ ok }] = await reserved`select pg_try_advisory_lock(${job.lockKey}) as ok`;
+        // Every job's lock lives on ONE dedicated connection; the job itself queries
+        // through the pool. A reserved connection per job (the old way) let N jobs
+        // take all N pool connections and then wait on the pool forever, which
+        // hung every request on 2026-10-06.
+        const lock = await lockConnection();
+        const [{ ok }] = await lock`select pg_try_advisory_lock(${job.lockKey}) as ok`;
         if (!ok) return;
         try {
           await job.run();
         } finally {
-          await reserved`select pg_advisory_unlock(${job.lockKey})`;
+          await lock`select pg_advisory_unlock(${job.lockKey})`;
         }
       } catch (err) {
         console.error(`[daemon] ${job.name}: ${err?.message ?? err}`);
       } finally {
-        reserved.release();
         job.running = false;
       }
     })();
