@@ -25,7 +25,7 @@
     },
     "packages/cli": {
       "name": "@profullstack/pwamart",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "bin": {
         "pwamart": "./bin/pwamart.mjs",
       },
@@ -44,7 +44,7 @@
     },
     "packages/mcp": {
       "name": "@profullstack/pwamart-mcp",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "bin": {
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },
@@ -187,6 +187,8 @@
     "tsyringe": ["tsyringe@4.10.0", "", { "dependencies": { "tslib": "^1.9.3" } }, "sha512-axr3IdNuVIxnaK5XGEUFTu3YmAQ6lllgrvqfEoR16g/HGnYY/6We4oWENtAnzK6/LpJ2ur9PAb80RBt7/U4ugw=="],
 
     "uuid": ["uuid@11.1.1", "", { "bin": { "uuid": "dist/esm/bin/uuid" } }, "sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ=="],
+
+    "@profullstack/pwamart-mcp/@profullstack/pwamart": ["@profullstack/pwamart@0.4.0", "", { "dependencies": { "@profullstack/auth-system": "^0.7.1", "@profullstack/hqtui": "^0.8.0" }, "bin": { "pwamart": "bin/pwamart.mjs" } }, "sha512-HewnEbdxowpLFnRMnZUgo9dEd8btkrSk9UvgPG/FockaY5L9Pj7BL7KGVIJysRsBoid5xxAMrzZ31bcVl7aLsg=="],
 
     "tsyringe/tslib": ["tslib@1.14.1", "", {}, "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg=="],
   }
