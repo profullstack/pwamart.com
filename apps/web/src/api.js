@@ -6,7 +6,7 @@ import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { applyPurchase, billingState, currentPlan, quote, setRenew } from './billing.js';
 import { checkClaim, shapeClaim, startClaim } from './imports.js';
-import { categoryCounts, getApp, getPublisher, listApps, recordInstall, reviewsFor, shape } from './catalog.js';
+import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
 import { sendLoginLink, sendOrgInvite } from './mail.js';
@@ -298,6 +298,21 @@ api.post('/apps/:slug/reviews', async (c) => {
                              rating_count = rating_count + ${old ? 0 : 1} where id = ${row.id}`;
   });
   return c.json({ ok: true }, 201);
+});
+
+/** Public: every publisher with a live app. filter: all | claimed | imported | verified. */
+api.get('/publishers', async (c) => {
+  const filter = PUBLISHER_FILTERS.includes(c.req.query('filter')) ? c.req.query('filter') : 'all';
+  const sort = PUBLISHER_SORTS.includes(c.req.query('sort')) ? c.req.query('sort') : 'apps';
+  return c.json(
+    await listPublishers({
+      q: c.req.query('q')?.trim().slice(0, 80) || null,
+      filter,
+      sort,
+      limit: Number(c.req.query('limit')) || 48,
+      offset: Number(c.req.query('offset')) || 0,
+    }),
+  );
 });
 
 api.get('/publishers/:slug', async (c) => {

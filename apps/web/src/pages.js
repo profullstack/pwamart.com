@@ -64,6 +64,7 @@ ${head}
   <form class="search" action="/apps" role="search">${SEARCH_ICON}<input name="q" type="search" placeholder="Search web apps" aria-label="Search web apps" autocomplete="off"></form>
   <nav class="nav">
     <a href="/apps">Browse</a>
+    <a href="/publishers">Publishers</a>
     <a href="/developers">Developers</a>
     <a href="/pricing">Pricing</a>
     <a class="keep" href="/console">Console</a>
@@ -88,7 +89,7 @@ ${
     <p style="max-width:340px">The app store for the open web. Built by <a href="https://profullstack.com">Profullstack</a>.</p>
   </div>
   <nav>
-    <a href="/apps">Browse</a><a href="/developers">Developers</a><a href="/pricing">Pricing</a>
+    <a href="/apps">Browse</a><a href="/publishers">Publishers</a><a href="/developers">Developers</a><a href="/pricing">Pricing</a>
     <a href="/developers#api">API</a><a href="/developers#mcp">MCP</a><a href="/developers#cli">CLI &amp; TUI</a>
     <a href="/featured">Get featured</a><a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a>
     <a href="/llms.txt">llms.txt</a><a href="https://github.com/profullstack/pwamart.com">GitHub</a>
@@ -286,12 +287,13 @@ export function homePage({ featured, top, fresh, counts, stats }) {
 
 /* ------------------------------------------------------------- browse -- */
 
-export function browsePage({ q, category, sort, list, counts, offset, limit, stats }) {
-  const title = q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
+export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null }) {
+  const title = publisher ? `Apps by ${publisher.name}` : q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
   const qs = (o) => {
     const p = new URLSearchParams();
     if (q) p.set('q', q);
     if (category) p.set('category', category);
+    if (publisher) p.set('publisher', publisher.slug);
     if (sort) p.set('sort', sort);
     if (o) p.set('offset', o);
     return `/apps?${p}`;
@@ -301,8 +303,9 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
   <section class="block" style="padding-top:40px">
     <div class="eyebrow">${e(list.total)} result${list.total === 1 ? '' : 's'}</div>
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 22px">${e(title)}</h1>
+    ${publisher ? `<div class="chips" style="margin-bottom:12px"><a class="chip on" href="/publishers/${e(publisher.slug)}">${e(publisher.name)}</a><a class="chip" href="/apps">✕ all publishers</a><a class="chip" href="/publishers">Browse publishers →</a></div>` : ''}
     ${categoryChips(counts, category)}
-    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
+    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
   <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
   ${list.apps.length ? adSlot('browse') : ''}
@@ -725,5 +728,88 @@ export function advertisePage({ stats, net = null, subscribers = 0, priceCents =
     path: '/advertise',
     body,
     stats,
+  });
+}
+
+/* ---------------------------------------------------------- publishers -- */
+
+const host = (u) => {
+  try {
+    return new URL(u).host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+export function publisherCard(p) {
+  const tag = p.claimable ? '<span>unclaimed</span>' : p.verified ? '<span>verified</span>' : '';
+  return `<a class="card" href="/publishers/${e(p.slug)}">
+  ${icon({ icon: p.icon, name: p.name })}
+  <div class="body">
+    <div class="name">${e(p.name)} ${p.verified ? CHECK : ''}</div>
+    <div class="by">${e(host(p.website) || p.slug)}</div>
+    <div class="sum">${e(p.bio ?? '')}</div>
+    <div class="meta"><span>${e(p.apps)} app${p.apps === 1 ? '' : 's'}</span><span>${fmt(p.installs)} installs</span>${tag}</div>
+  </div>
+</a>`;
+}
+
+export function publishersPage({ q, filter, sort, list, offset, limit, stats }) {
+  const qs = (o = {}) => {
+    const p = new URLSearchParams();
+    const v = { q, filter, sort, ...o };
+    if (v.q) p.set('q', v.q);
+    if (v.filter && v.filter !== 'all') p.set('filter', v.filter);
+    if (v.sort && v.sort !== 'apps') p.set('sort', v.sort);
+    if (v.offset) p.set('offset', v.offset);
+    const s = p.toString();
+    return `/publishers${s ? `?${s}` : ''}`;
+  };
+  const filters = [
+    ['all', 'All'],
+    ['claimed', 'Claimed'],
+    ['imported', 'Unclaimed'],
+    ['verified', 'Verified'],
+  ];
+  const sorts = [
+    ['apps', 'Most apps'],
+    ['name', 'A–Z'],
+    ['new', 'Newest'],
+  ];
+  const c = list.counts ?? {};
+  const body = `<div class="wrap">
+  <section class="block" style="padding-top:40px">
+    <div class="eyebrow">${e(list.total)} publisher${list.total === 1 ? '' : 's'}</div>
+    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 14px">${q ? `Publishers matching “${e(q)}”` : 'Publishers'}</h1>
+    <p class="lede" style="margin:0 0 20px">Everyone with a live app on pwamart. <b>Unclaimed</b> publishers were listed from another directory; if one is yours, open it and claim it with a DNS record.</p>
+    <form action="/publishers" role="search" style="display:flex;gap:8px;max-width:520px;margin:0 0 16px;flex-wrap:wrap">
+      ${filter && filter !== 'all' ? `<input type="hidden" name="filter" value="${e(filter)}">` : ''}
+      <input name="q" type="search" value="${e(q ?? '')}" placeholder="Search publishers" aria-label="Search publishers" style="flex:1;min-width:200px;padding:12px 14px;border-radius:12px;border:1px solid rgba(127,127,127,.35);font:inherit;background:transparent;color:inherit">
+      <button class="btn" type="submit">Search</button>
+    </form>
+    <div class="chips">${filters
+      .map(([k, n]) => `<a class="chip${(filter || 'all') === k ? ' on' : ''}" href="${e(qs({ filter: k, offset: 0 }))}">${n} <small>${e(c[k] ?? 0)}</small></a>`)
+      .join('')}</div>
+    <div class="chips" style="margin-top:12px">${sorts
+      .map(([k, n]) => `<a class="chip${(sort || 'apps') === k ? ' on' : ''}" href="${e(qs({ sort: k, offset: 0 }))}">${n}</a>`)
+      .join('')}</div>
+  </section>
+  <section class="block" style="padding-top:0">${
+    list.publishers.length
+      ? `<div class="grid">${list.publishers.map(publisherCard).join('')}</div>`
+      : `<div class="empty">No publishers match. <a href="/publishers">See them all</a>.</div>`
+  }</section>
+  <div class="pager">
+    ${offset > 0 ? `<a class="btn" href="${e(qs({ offset: Math.max(0, offset - limit) }))}">← Previous</a>` : ''}
+    ${offset + limit < list.total ? `<a class="btn" href="${e(qs({ offset: offset + limit }))}">Next →</a>` : ''}
+  </div>
+</div>`;
+  return layout({
+    title: 'Publishers',
+    description: 'Every publisher with a live web app on pwamart, claimed and unclaimed.',
+    path: '/publishers',
+    body,
+    stats,
+    noindex: Boolean(q),
   });
 }

@@ -699,3 +699,60 @@ d('get featured for $19 + the newsletter', () => {
     expect(JSON.parse(sub.result.content[0].text).ok).toBe(true);
   });
 });
+
+d('the publisher directory', () => {
+  let anon;
+  beforeAll(async () => {
+    if (!HAS_DB) return;
+    anon = req(null);
+    const sql = db();
+    // An unclaimed import with one live app, and a claimed publisher with only a draft.
+    const [org] = await sql`select id from organizations limit 1`;
+    const [imp] = await sql`insert into publishers (org_id, slug, name, website, claimable, source, source_ref)
+                            values (${org.id}, 'imported-co', 'Imported Co', 'https://imported.example', true, 'saasrow', 'x1') returning id`;
+    const [draftOnly] = await sql`insert into publishers (org_id, slug, name) values (${org.id}, 'drafts-only', 'Drafts Only') returning id`;
+    const app = (pub, slug, status) =>
+      sql`insert into apps (publisher_id, slug, name, url, origin, category, status, published_at, verify_token)
+          values (${pub}, ${slug}, ${slug}, ${`https://${slug}.example/`}, ${`https://${slug}.example`}, 'productivity', ${status}::app_status, now(), ${`tok-${slug}`})`;
+    await app(imp.id, 'imported-thing', 'published');
+    await app(draftOnly.id, 'unfinished', 'draft');
+  });
+
+  test('the API lists publishers with a live app, with counts per filter', async () => {
+    const all = (await anon('GET', '/publishers')).body;
+    const slugs = all.publishers.map((p) => p.slug);
+    expect(slugs).toContain('imported-co');
+    expect(slugs).toContain('erin-studio');
+    expect(slugs).not.toContain('drafts-only');
+    expect(all.total).toBe(all.counts.all);
+    expect(all.counts.all).toBe(all.counts.claimed + all.counts.imported);
+    const imported = (await anon('GET', '/publishers?filter=imported')).body.publishers;
+    expect(imported.map((p) => p.slug)).toEqual(['imported-co']);
+    expect(imported[0].claimable).toBe(true);
+    expect(imported[0].apps).toBe(1);
+    expect((await anon('GET', '/publishers?filter=claimed')).body.publishers.some((p) => p.slug === 'imported-co')).toBe(false);
+    expect((await anon('GET', '/publishers?filter=verified')).body.publishers.every((p) => p.verified)).toBe(true);
+    expect((await anon('GET', '/publishers?q=imported%20co')).body.publishers.map((p) => p.slug)).toEqual(['imported-co']);
+    // A LIKE wildcard in the query is a character, not "match everything".
+    expect((await anon('GET', '/publishers?q=%25')).body.total).toBe(0);
+    const byName = (await anon('GET', '/publishers?sort=name')).body.publishers.map((p) => p.name.toLowerCase());
+    expect(byName).toEqual([...byName].sort());
+  });
+
+  test('/publishers is a page with filters, and Browse filters by publisher', async () => {
+    const page = await (await app.request('/publishers')).text();
+    expect(page).toContain('Imported Co');
+    expect(page).toContain('unclaimed');
+    expect(page).toContain('href="/publishers?filter=imported"');
+    expect(page).not.toContain('Drafts Only');
+    const only = await (await app.request('/publishers?filter=imported')).text();
+    expect(only).not.toContain('Erin Studio');
+    const browse = await (await app.request('/apps?publisher=imported-co')).text();
+    expect(browse).toContain('Apps by Imported Co');
+    expect(browse).toContain('href="/apps/imported-thing"');
+    expect(browse).not.toContain('href="/apps/gallery"');
+    expect(browse).toContain('publisher=imported-co&sort=new');
+    const home = await (await app.request('/')).text();
+    expect(home).toContain('href="/publishers"');
+  });
+});

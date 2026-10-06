@@ -129,3 +129,44 @@ export async function recordInstall(appId, method, userId = null) {
   if (m !== 'open') await sql`update apps set installs = installs + 1 where id = ${appId}`;
   return m;
 }
+
+/**
+ * The publisher directory. Only publishers with at least one live app are listed,
+ * the same rule the store bar's count uses. `filter`:
+ *   claimed   run by someone with an account here (not an unclaimed import)
+ *   imported  listed from another directory and not claimed yet
+ *   verified  the store has checked who they are
+ */
+export const PUBLISHER_FILTERS = ['all', 'claimed', 'imported', 'verified'];
+export const PUBLISHER_SORTS = ['apps', 'name', 'new'];
+
+export async function listPublishers({ q, filter = 'all', sort = 'apps', limit = 48, offset = 0 } = {}) {
+  const sql = db();
+  const term = q ? `%${String(q).replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : null;
+  const where = sql`
+    where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published')
+    ${term ? sql`and (p.name ilike ${term} or p.slug ilike ${term} or p.website ilike ${term})` : sql``}
+    ${filter === 'claimed' ? sql`and not p.claimable` : filter === 'imported' ? sql`and p.claimable` : filter === 'verified' ? sql`and p.verified` : sql``}`;
+  const order =
+    sort === 'name' ? sql`order by lower(p.name)` : sort === 'new' ? sql`order by p.created_at desc` : sql`order by live desc, installs desc, lower(p.name)`;
+  const rows = await sql`
+    select p.slug, p.name, p.website, p.bio, p.verified, p.claimable, p.source, p.created_at,
+           (select count(*) from apps a where a.publisher_id = p.id and a.status = 'published')::int as live,
+           (select coalesce(sum(a.installs), 0) from apps a where a.publisher_id = p.id and a.status = 'published')::int as installs,
+           (select a.icon_url from apps a where a.publisher_id = p.id and a.status = 'published' and a.icon_url is not null
+             order by a.installs desc, a.published_at limit 1) as icon_url,
+           count(*) over ()::int as total
+    from publishers p ${where} ${order}
+    limit ${Math.min(Math.max(Number(limit) || 48, 1), 100)} offset ${Math.max(Number(offset) || 0, 0)}`;
+  const [counts] = await sql`
+    select count(*)::int as "all",
+           count(*) filter (where not p.claimable)::int as claimed,
+           count(*) filter (where p.claimable)::int as imported,
+           count(*) filter (where p.verified)::int as verified
+    from publishers p where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published')`;
+  return {
+    total: rows[0]?.total ?? 0,
+    counts,
+    publishers: rows.map(({ total, icon_url, ...p }) => ({ ...p, icon: icon_url, apps: p.live })),
+  };
+}
