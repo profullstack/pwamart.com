@@ -26,7 +26,27 @@ export const sendLoginLink = ({ email, url }) =>
     text: `Tap to sign in to pwamart:\n\n${url}\n\nThe link works once and expires in 20 minutes.\nIf you did not ask for it, ignore this email.`,
   });
 
-export const sendOrgInvite = ({ email, orgName, url }) =>
+const day = (d) => new Date(d).toISOString().slice(0, 10);
+
+export const sendRenewalReminder = ({ email, plan, periodEnd, kind, url }) =>
+  send({
+    to: email,
+    subject: kind === 'ended' ? `Your pwamart ${plan} plan has ended` : `Your pwamart ${plan} plan ends ${day(periodEnd)}`,
+    text:
+      (kind === 'ended'
+        ? `Your ${plan} plan ended on ${day(periodEnd)}. Your listings stay live; adding publishers or apps past the Free limits needs a plan again.`
+        : `Your ${plan} plan is paid through ${day(periodEnd)}. Payment is prepaid crypto, so nothing renews on its own.`) +
+      `\n\nRenew, switch plans or cancel these reminders here:\n\n${url}\n`,
+  });
+
+export const sendClaimVerified = ({ email, publisher, apps, url }) =>
+  send({
+    to: email,
+    subject: `${publisher} is yours on pwamart`,
+    text: `The DNS record checked out, so ${publisher} and its ${apps} app${apps === 1 ? '' : 's'} on pwamart now belong to your account.\n\nManage them here:\n\n${url}\n`,
+  });
+
+export const sendOrgInvite =({ email, orgName, url }) =>
   send({
     to: email,
     subject: `You were added to ${orgName} on pwamart`,

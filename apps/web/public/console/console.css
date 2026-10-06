@@ -47,3 +47,10 @@ label.f small { font-weight: 400; color: var(--muted); }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 body:has(.signin) .side { display: none; }
 body:has(.signin) .console { grid-template-columns: 1fr; }
+
+#view { min-width: 0; }
+.console .plans { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.console .plan.current::before { content: "Your plan"; }
+.console .plan.wanted::before { content: "Selected"; }
+.console .plan .btn { white-space: normal; height: auto; min-height: 44px; padding: 10px 16px; text-align: center; line-height: 1.3; }
+.console .plan small { color: var(--muted); font-size: 12.5px; }

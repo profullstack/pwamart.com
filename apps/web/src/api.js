@@ -4,6 +4,7 @@ import { createCheckout, paymentsEnabled, settleWebhook, verifyWebhook } from '@
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
+import { applyPurchase, billingState, currentPlan, quote, setRenew } from './billing.js';
 import { categoryCounts, getApp, getPublisher, listApps, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
@@ -90,17 +91,8 @@ async function requireUser(c) {
 
 /* ---------------------------------------------------------------- plans -- */
 
-/** The account's plan right now. A lapsed paid plan reads as free. */
-export async function planFor(userId) {
-  const [row] = await db()`
-    select u.is_admin, p.plan, p.paid_through from users u
-    left join account_plans p on p.user_id = u.id and p.paid_through > now()
-    where u.id = ${userId}`;
-  // Staff (the house account that lists our own apps) is never limited.
-  if (row?.is_admin) return { key: 'unlimited', ...PLANS.unlimited, paid_through: null, staff: true };
-  const key = row?.plan ?? 'free';
-  return { key, ...PLANS[key], paid_through: row?.paid_through ?? null };
-}
+/** The account's plan right now (billing.js: paid periods; staff are unlimited). */
+export const planFor = (userId) => currentPlan(userId);
 
 /** Publishers and apps across every org this account created. */
 export async function usageFor(userId) {
@@ -619,39 +611,73 @@ api.post('/orgs/:org/projects', async (c) => {
 
 api.get('/billing', async (c) => {
   const user = await requireUser(c);
-  const [plan, usage, payments] = await Promise.all([
-    planFor(user.id),
+  const [state, usage, payments] = await Promise.all([
+    billingState(user.id),
     usageFor(user.id),
-    db()`select amount_cents, status, created_at from payments where user_id = ${user.id} order by created_at desc limit 24`,
+    db()`select p.amount_cents, p.status, p.created_at, p.raw->'data'->'metadata'->>'plan' as plan,
+                exists (select 1 from plan_grants g where g.payment_id = p.id) as applied
+         from payments p where p.user_id = ${user.id} order by p.created_at desc limit 24`,
   ]);
-  return c.json({ plan, usage, payments, payments_enabled: paymentsEnabled() });
+  return c.json({ ...state, usage, payments, plans: PLANS, payments_enabled: paymentsEnabled() });
 });
 
+/** Price and timing of buying a plan now, without starting a payment. */
+api.get('/billing/quote', async (c) => {
+  const user = await requireUser(c);
+  const plan = c.req.query('plan');
+  if (!['pro', 'unlimited'].includes(plan)) return c.json({ error: 'plan is pro or unlimited' }, 400);
+  return c.json({ plan, ...(await quote(user.id, plan)) });
+});
+
+/** Buy a year: new, renewal, upgrade (prorated) or a prepaid downgrade queued after the current plan. */
 api.post('/billing/checkout', async (c) => {
   const user = await requireUser(c);
   const { plan } = await body(c);
   if (!['pro', 'unlimited'].includes(plan)) return c.json({ error: 'plan is pro or unlimited' }, 400);
   if (!paymentsEnabled()) return c.json({ error: 'payments are not switched on yet' }, 503);
+  const q = await quote(user.id, plan);
+  if (q.kind === 'staff') return c.json({ error: 'staff accounts are not billed' }, 400);
   const p = PLANS[plan];
+  const what = { new: '1 year', renew: '1 more year', upgrade: 'upgrade, 1 year from today', downgrade: `1 year from ${q.starts_at.toISOString().slice(0, 10)}` }[q.kind];
   const { checkoutUrl } = await createCheckout({
     user,
-    amountCents: p.priceCents,
-    description: `pwamart ${p.name}: 1 year`,
-    metadata: { user_id: user.id, plan, kind: 'year' },
+    amountCents: q.amount_cents,
+    description: `pwamart ${p.name}: ${what}`,
+    metadata: { user_id: user.id, plan, kind: q.kind },
     blockchain: config.coinpay.defaultChain,
     // Crypto only: never 'card' or 'both', which open a Stripe session (Stripe is off-limits).
     paymentMethod: 'crypto',
     successUrl: `${config.siteUrl}/console/billing?paid=1`,
     cancelUrl: `${config.siteUrl}/console/billing`,
   });
-  return c.json({ checkout_url: checkoutUrl });
+  return c.json({ checkout_url: checkoutUrl, quote: q });
 });
 
 /**
- * Mounted outside /api/v1 at /webhooks/coinpay. A settled payment adds one year
- * of its plan. Buying unlimited while on pro switches to unlimited from today and
- * keeps whichever end date is later.
+ * What happens when the paid time runs out:
+ *   renew: 'pro' | 'unlimited'  switch at renewal (a downgrade, or back up)
+ *   renew: 'none'               cancel: the plan runs to its end, then free
+ *   renew: 'same'               resume: renew as whatever is current
  */
+api.post('/billing/renewal', async (c) => {
+  const user = await requireUser(c);
+  const { renew } = await body(c);
+  if (!['same', 'pro', 'unlimited', 'none'].includes(renew)) return c.json({ error: 'renew is same, pro, unlimited or none' }, 400);
+  await setRenew(db(), user.id, renew);
+  return c.json(await billingState(user.id));
+});
+api.post('/billing/cancel', async (c) => {
+  const user = await requireUser(c);
+  await setRenew(db(), user.id, 'none');
+  return c.json(await billingState(user.id));
+});
+api.post('/billing/resume', async (c) => {
+  const user = await requireUser(c);
+  await setRenew(db(), user.id, 'same');
+  return c.json(await billingState(user.id));
+});
+
+/** Mounted outside /api/v1 at /webhooks/coinpay. A settled payment becomes one paid period. */
 export async function coinpayWebhook(c) {
   const raw = await c.req.text();
   const ok = verifyWebhook({ rawBody: raw, signatureHeader: c.req.header('x-coinpay-signature') ?? c.req.header('coinpay-signature') });
@@ -665,20 +691,13 @@ export async function coinpayWebhook(c) {
   const result = await settleWebhook(payload, {
     grant: async (tx, { meta, payment }) => {
       if (!meta.user_id || !payment || !PLANS[meta.plan] || meta.plan === 'free') return null;
-      // What we charged decides the plan, not what the payload claims.
-      if (payment.amount_cents < PLANS[meta.plan].priceCents) return null;
+      // The amount is the one WE recorded at checkout. An upgrade was priced with a
+      // credit, so only a full-price purchase is held to the list price.
+      if (meta.kind !== 'upgrade' && payment.amount_cents < PLANS[meta.plan].priceCents) return null;
       const [fresh] = await tx`insert into plan_grants (payment_id, user_id, plan) values (${payment.id}, ${meta.user_id}, ${meta.plan})
                                on conflict (payment_id) do nothing returning payment_id`;
       if (!fresh) return { already: true };
-      const [row] = await tx`
-        insert into account_plans (user_id, plan, paid_through) values (${meta.user_id}, ${meta.plan}, now() + interval '1 year')
-        on conflict (user_id) do update set
-          plan = case when account_plans.plan = 'unlimited' and account_plans.paid_through > now() then 'unlimited' else excluded.plan end,
-          paid_through = case when account_plans.plan = excluded.plan
-                              then greatest(account_plans.paid_through, now()) + interval '1 year'
-                              else greatest(account_plans.paid_through, now() + interval '1 year') end
-        returning plan, paid_through`;
-      return row;
+      return applyPurchase(tx, { userId: meta.user_id, plan: meta.plan, kind: meta.kind, paymentId: payment.id });
     },
   }).catch((err) => ({ error: err.message }));
   return c.json({ ok: true, result });

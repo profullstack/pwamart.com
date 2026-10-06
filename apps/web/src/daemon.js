@@ -1,0 +1,86 @@
+import { db } from '@pwamart/db';
+import { dueReminders, markReminded } from './billing.js';
+import { config } from './config.js';
+import { sendRenewalReminder } from './mail.js';
+
+/**
+ * The background loop inside the web process: one timer, several jobs, each with
+ * its own cadence. Jobs never overlap themselves, and a job that throws is logged
+ * and retried on its next turn rather than taking the server down.
+ *
+ * A Postgres advisory lock per job means a second container (during a deploy's
+ * overlap) skips the turn instead of doing the same work twice.
+ */
+const jobs = [];
+
+export function addJob(name, everyMs, run) {
+  jobs.push({ name, everyMs, run, lastRun: 0, running: false, lockKey: hash(`pwamart:${name}`) });
+}
+
+function hash(s) {
+  let h = 0;
+  for (const ch of s) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  return h;
+}
+
+async function tick() {
+  const now = Date.now();
+  for (const job of jobs) {
+    if (job.running || now - job.lastRun < job.everyMs) continue;
+    job.running = true;
+    job.lastRun = now;
+    (async () => {
+      const sql = db();
+      const reserved = await sql.reserve();
+      try {
+        const [{ ok }] = await reserved`select pg_try_advisory_lock(${job.lockKey}) as ok`;
+        if (!ok) return;
+        try {
+          await job.run();
+        } finally {
+          await reserved`select pg_advisory_unlock(${job.lockKey})`;
+        }
+      } catch (err) {
+        console.error(`[daemon] ${job.name}: ${err?.message ?? err}`);
+      } finally {
+        reserved.release();
+        job.running = false;
+      }
+    })();
+  }
+}
+
+let timer = null;
+export function startDaemon({ intervalMs = 5_000 } = {}) {
+  if (timer) return;
+  timer = setInterval(tick, intervalMs);
+  timer.unref?.();
+  console.log(`[daemon] started: ${jobs.map((j) => `${j.name}/${Math.round(j.everyMs / 1000)}s`).join(', ')}`);
+}
+
+/* ------------------------------------------------------------- reminders -- */
+
+/** Renewal reminders 14 and 3 days before the paid time runs out, and once when it has. */
+export async function runReminders() {
+  let sent = 0;
+  for (const r of await dueReminders()) {
+    // Claim the notice first: a send that fails after this is not retried, which
+    // beats a reminder that is sent twice.
+    if (!(await markReminded(db(), { userId: r.user_id, periodEnd: r.period_end, kind: r.kind }))) continue;
+    try {
+      await sendRenewalReminder({
+        email: r.email,
+        plan: r.renew === 'same' ? r.plan : r.renew,
+        periodEnd: r.period_end,
+        kind: r.kind,
+        url: `${config.siteUrl}/console/billing`,
+      });
+      sent++;
+    } catch (err) {
+      console.error(`[daemon] reminder to ${r.email}: ${err.message}`);
+    }
+  }
+  return sent;
+}
+
+addJob('renewal-reminders', 60 * 60_000, runReminders);

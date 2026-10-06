@@ -452,33 +452,123 @@ async function orgDetail(ref) {
 
 async function billing() {
   const b = await api('/billing');
-  const want = new URLSearchParams(location.search).get('plan');
-  const paid = new URLSearchParams(location.search).get('paid');
-  const card = (key, name, price, lines) => `<div class="plan ${key === want ? 'hot' : ''}">
-    <div class="eyebrow">${name}${b.plan.key === key ? ' · current' : ''}</div><div class="price">${price}</div>
-    <ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul>
-    ${key === 'free' ? '' : `<button class="btn ${key === 'unlimited' ? 'dark' : 'primary'}" data-plan="${key}">${b.plan.key === key ? 'Add a year' : `Get ${name}`}</button>`}
-  </div>`;
-  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Plan & billing</div><h1>${esc(b.plan.name)}</h1></div></div>
-    ${paid ? '<p class="ok-msg">Payment received. The plan switches on when CoinPay confirms it, usually within a few minutes.</p>' : ''}
-    <p class="muted">${b.plan.paid_through ? `Paid through ${esc(b.plan.paid_through.slice(0, 10))}.` : 'You are on the free plan.'} Using ${b.usage.publishers} publisher${b.usage.publishers === 1 ? '' : 's'} and ${b.usage.apps} app${b.usage.apps === 1 ? '' : 's'}.</p>
-    <div class="plans">
-      ${card('free', 'Free', '$0', ['1 publisher', '10 apps'])}
-      ${card('pro', 'Pro', '$10<small> / year</small>', ['10 publishers', '100 apps'])}
-      ${card('unlimited', 'Unlimited', '$199<small> / year</small>', ['Unlimited publishers and apps', 'Shared orgs, teams, projects'])}
+  const q = new URLSearchParams(location.search);
+  const want = q.get('plan');
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+  const money = (c) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
+  const cur = b.plan.key;
+  const RANK = { free: 0, pro: 1, unlimited: 2 };
+  const name = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+  const upcoming = b.periods.filter((p) => !p.current);
+  const statusLine = {
+    staff: 'Staff account: unlimited, never billed.',
+    free: 'You are on the free plan.',
+    scheduled: `A paid plan starts ${day(b.periods[0]?.starts_at)}.`,
+    active: `<b>${name[cur]}</b> is paid through <b>${day(b.plan.paid_through)}</b>${upcoming.length ? `, then ${upcoming.map((p) => `<b>${name[p.plan]}</b> through <b>${day(p.ends_at)}</b>`).join(', then ')}` : ''}. ${b.renew_plan && b.renew_plan !== cur && !upcoming.length ? `Switches to <b>${name[b.renew_plan]}</b> at renewal.` : 'We email a renewal link 14 and 3 days before the paid time ends.'}`,
+    ending: `Cancelled: <b>${name[cur]}</b> ends <b>${day(b.coverage_end)}</b>, then the account is Free. Listings stay live.`,
+  }[b.status];
+
+  // What each plan card offers, given where the account is now.
+  const action = (key) => {
+    if (b.status === 'staff') return '';
+    if (key === 'free') {
+      if (cur === 'free') return '<button class="btn" disabled>Current plan</button>';
+      if (b.status === 'ending') return '<button class="btn" disabled>Downgrade scheduled</button>';
+      return '<button class="btn" data-act="cancel">Downgrade to Free (cancel)</button>';
+    }
+    const qt = b.quotes[key];
+    if (key === cur) return `<button class="btn primary" data-buy="${key}">Renew · add a year · ${money(qt.amount_cents)}</button>`;
+    if (RANK[key] > RANK[cur]) {
+      const credit = qt.credit_cents ? ` <small>(${money(qt.credit_cents)} credit for unused Pro)</small>` : '';
+      return `<button class="btn primary" data-buy="${key}">Upgrade now · ${money(qt.amount_cents)}</button>${credit}`;
+    }
+    // A lower paid plan while on a higher one: switch at renewal, optionally prepaid.
+    const queued = upcoming.find((p) => p.plan === key);
+    if (queued)
+      return `<button class="btn" disabled>${name[key]} starts ${day(queued.starts_at)}</button>
+        <button class="btn" data-buy="${key}">Prepay another year · ${money(qt.amount_cents)}</button>`;
+    const switching = b.renew_plan === key;
+    return `${switching ? '<button class="btn" disabled>Switches at renewal</button>' : `<button class="btn" data-renew="${key}">Switch to ${name[key]} at renewal</button>`}
+      <button class="btn" data-buy="${key}">Prepay ${name[key]} from ${day(qt.starts_at)} · ${money(qt.amount_cents)}</button>`;
+  };
+  const limits = (key) => {
+    const p = b.plans[key];
+    const over = (n, lim) => lim !== null && n > lim;
+    const warn = over(b.usage.publishers, p.publishers) || over(b.usage.apps, p.apps)
+      ? `<p class="err" style="font-size:13px;margin:0">You have ${b.usage.publishers} publishers and ${b.usage.apps} apps. Everything stays listed, but you cannot add more past these limits.</p>`
+      : '';
+    return `<ul><li>${p.publishers ?? 'Unlimited'} publisher${p.publishers === 1 ? '' : 's'}</li><li>${p.apps ?? 'Unlimited'} apps</li>${p.teams ? '<li>Shared orgs, teams, projects</li>' : ''}</ul>${RANK[key] < RANK[cur] ? warn : ''}`;
+  };
+  const card = (key, price) => `<div class="plan ${key === cur ? 'hot current' : key === want ? 'hot wanted' : ''}">
+      <div class="eyebrow">${name[key]}${key === cur ? ' · current' : ''}</div>
+      <div class="price">${price}</div>
+      ${limits(key)}
+      <div style="display:grid;gap:8px;margin-top:auto">${action(key)}</div>
+    </div>`;
+
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Plan & billing</div><h1>${name[cur]}</h1></div>
+      ${b.status === 'ending' ? '<button class="btn primary" data-act="resume">Resume plan</button>' : ''}</div>
+    ${q.get('paid') ? '<p class="ok-msg">Payment sent. The plan changes when CoinPay confirms it on chain, usually within a few minutes; this page refreshes itself.</p>' : ''}
+    <div class="panel" style="margin-bottom:18px">
+      <p style="margin:0 0 10px">${statusLine}</p>
+      <div class="kpis" style="margin:0">
+        <div class="kpi"><span>Publishers</span><b>${b.usage.publishers}${b.plan.publishers !== null ? ` / ${b.plan.publishers}` : ''}</b>${meter(b.usage.publishers, b.plan.publishers)}</div>
+        <div class="kpi"><span>Apps</span><b>${b.usage.apps}${b.plan.apps !== null ? ` / ${b.plan.apps}` : ''}</b>${meter(b.usage.apps, b.plan.apps)}</div>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">Payment is prepaid crypto through CoinPay, so nothing is ever charged automatically. Upgrades apply at once with credit for unused Pro time; downgrades take effect when the paid time ends.</p>
     </div>
+    <div class="plans">${card('free', '$0')}${card('pro', '$10<small> / year</small>')}${card('unlimited', '$199<small> / year</small>')}</div>
     <p id="bmsg"></p>
-    ${b.payments.length ? `<h2 style="margin:10px 0 12px">Payments</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>${b.payments.map((p) => `<tr><td>${esc(p.created_at.slice(0, 10))}</td><td>$${(p.amount_cents / 100).toFixed(2)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
-  view.querySelectorAll('[data-plan]').forEach((btn) =>
+    ${b.payments.length ? `<h2 style="margin:10px 0 12px">Payments</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead><tbody>${b.payments.map((p) => `<tr><td>${esc(day(p.created_at))}</td><td>${esc(name[p.plan] ?? '')}</td><td>${money(p.amount_cents)}</td><td>${p.applied ? 'applied' : ['confirmed', 'paid', 'completed', 'settled', 'succeeded'].includes(p.status) ? 'not applied (underpaid)' : esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+
+  const msg = (h) => ($('#bmsg').innerHTML = h);
+  view.querySelectorAll('[data-buy]').forEach((btn) =>
     btn.addEventListener('click', async () => {
       try {
-        const { checkout_url } = await api('/billing/checkout', { method: 'POST', body: { plan: btn.dataset.plan } });
+        if (!b.payments_enabled) throw new Error('Payments are not switched on yet.');
+        const { checkout_url } = await api('/billing/checkout', { method: 'POST', body: { plan: btn.dataset.buy } });
         location.assign(checkout_url);
       } catch (err) {
-        $('#bmsg').innerHTML = errBox(err);
+        msg(errBox(err));
       }
     }),
   );
+  const post = async (path, body, confirmText) => {
+    if (confirmText && !confirm(confirmText)) return;
+    try {
+      await api(path, { method: 'POST', body });
+      await refreshMe();
+      billing();
+    } catch (err) {
+      msg(errBox(err));
+    }
+  };
+  view.querySelectorAll('[data-renew]').forEach((btn) =>
+    btn.addEventListener('click', () => post('/billing/renewal', { renew: btn.dataset.renew }, `Switch to ${name[btn.dataset.renew]} when ${name[cur]} ends on ${day(b.coverage_end)}?`)),
+  );
+  view.querySelector('[data-act="cancel"]')?.addEventListener('click', () =>
+    post('/billing/cancel', {}, `Cancel ${name[cur]}? It stays active until ${day(b.coverage_end)}, then the account is Free. Nothing is refunded; listings stay live.`),
+  );
+  view.querySelector('[data-act="resume"]')?.addEventListener('click', () => post('/billing/resume', {}));
+
+  // Back from checkout: poll until the webhook lands (every 15s, then 30s), so the new plan appears on its own.
+  if (q.get('paid') && !billing.polling) {
+    const before = JSON.stringify(b.periods);
+    const started = Date.now();
+    billing.polling = true;
+    const poll = async () => {
+      if (location.pathname !== '/console/billing') return (billing.polling = false);
+      const now = await api('/billing').catch(() => null);
+      if (now && JSON.stringify(now.periods) !== before) {
+        billing.polling = false;
+        history.replaceState({}, '', '/console/billing');
+        await refreshMe();
+        return billing();
+      }
+      setTimeout(poll, Date.now() - started < 10 * 60_000 ? 15_000 : 30_000);
+    };
+    setTimeout(poll, 15_000);
+  }
 }
 
 /* ----------------------------------------------------------------- keys -- */
