@@ -101,6 +101,7 @@ async function route() {
     if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/billing') return billing();
     if (p === '/console/keys') return keys();
+    if (p.startsWith('/console/claim/')) return claimView(decodeURIComponent(p.split('/')[3]));
     view.innerHTML = '<p>Not found. <a href="/console">Back to the console</a></p>';
   } catch (err) {
     view.innerHTML = errBox(err);
@@ -569,6 +570,63 @@ async function billing() {
     };
     setTimeout(poll, 15_000);
   }
+}
+
+/* ---------------------------------------------------------------- claims -- */
+
+async function claimView(slug) {
+  let claim;
+  try {
+    claim = (await api(`/publishers/${encodeURIComponent(slug)}/claim`, { method: 'POST' })).claim;
+  } catch (err) {
+    view.innerHTML = `<div class="page-head"><h1>Claim a listing</h1></div>${errBox(err)}<p><a href="/publishers/${esc(slug)}">Back to the publisher</a></p>`;
+    return;
+  }
+  const render = () => {
+    const r = claim.record;
+    const state = {
+      pending: `<span class="pill unlisted">waiting for DNS</span> <span class="muted">Checking every ${claim.interval_seconds} seconds${claim.checks ? ` · ${claim.checks} checks so far` : ''}${claim.last_result ? ` · last: ${esc(claim.last_result)}` : ''}</span>`,
+      verified: '<span class="pill published">verified</span> It is yours.',
+      expired: '<span class="pill">expired</span> No record turned up in 7 days. Start again to get a new token.',
+      superseded: '<span class="pill">closed</span> Someone else proved the domain first.',
+    }[claim.status];
+    view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Claim a listing</div><h1>${esc(claim.publisher?.name ?? slug)}</h1></div></div>
+      <div class="panel" style="margin-bottom:18px">
+        <h3>Prove you run ${esc(claim.domain)}</h3>
+        <p class="muted">Add this DNS record where ${esc(claim.domain)} is hosted (Cloudflare, Porkbun, Route 53, ...). Leave this page open or come back later: we keep checking until it shows up.</p>
+        <div class="snip"><div class="snip-head"><span>Type</span></div><pre><code>${esc(r.type)}</code></pre></div>
+        <div class="snip"><div class="snip-head"><span>Name / host</span><button class="btn sm" type="button" data-copy="${esc(r.name)}">Copy</button></div><pre><code>${esc(r.name)}</code></pre></div>
+        <div class="snip"><div class="snip-head"><span>Value</span><button class="btn sm" type="button" data-copy="${esc(r.value)}">Copy</button></div><pre><code>${esc(r.value)}</code></pre></div>
+        <p style="margin:16px 0 0" id="claim-state">${state}</p>
+        <div class="row" style="margin-top:14px">
+          ${claim.status === 'pending' ? '<button class="btn dark" id="check-now">Check now</button>' : ''}
+          ${claim.status === 'verified' ? '<a class="btn primary" href="/console/publishers">Go to your publishers</a>' : ''}
+        </div>
+        <p class="muted" style="font-size:13px;margin:12px 0 0">Some DNS hosts want only <code>_pwamart</code> in the name field and add the domain themselves. New records usually appear within a few minutes.</p>
+      </div>`;
+    view.querySelectorAll('[data-copy]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(b.dataset.copy).catch(() => {});
+        b.textContent = 'Copied';
+        setTimeout(() => (b.textContent = 'Copy'), 1400);
+      }),
+    );
+    view.querySelector('#check-now')?.addEventListener('click', async (ev) => {
+      ev.currentTarget.disabled = true;
+      claim = (await api(`/claims/${claim.id}/check`, { method: 'POST' })).claim;
+      render();
+    });
+  };
+  render();
+  // The daemon does the checking; this just follows along at the same pace.
+  const follow = async () => {
+    if (!location.pathname.startsWith('/console/claim/') || claim.status !== 'pending') return;
+    claim = (await api(`/claims/${claim.id}`).catch(() => ({ claim }))).claim;
+    if (claim.status !== 'pending') await refreshMe().catch(() => {});
+    render();
+    setTimeout(follow, claim.interval_seconds * 1000);
+  };
+  setTimeout(follow, claim.interval_seconds * 1000);
 }
 
 /* ----------------------------------------------------------------- keys -- */

@@ -12,7 +12,7 @@ const PUBLIC_FIELDS = (sql) => sql`
   a.category, a.tags, a.status, a.featured, a.installs, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
   a.verified_at is not null as verified, a.check_report, a.checked_at, a.published_at, a.updated_at,
-  p.slug as publisher_slug, p.name as publisher_name, p.verified as publisher_verified`;
+  p.slug as publisher_slug, p.name as publisher_name, p.verified as publisher_verified, p.claimable as publisher_claimable, p.claim_domain as publisher_claim_domain`;
 
 export function shape(row) {
   if (!row) return null;
@@ -47,7 +47,7 @@ export function shape(row) {
     checked_at: row.checked_at,
     published_at: row.published_at,
     updated_at: row.updated_at,
-    publisher: { slug: row.publisher_slug, name: row.publisher_name, verified: row.publisher_verified },
+    publisher: { slug: row.publisher_slug, name: row.publisher_name, verified: row.publisher_verified, claimable: Boolean(row.publisher_claimable), claim_domain: row.publisher_claim_domain ?? null },
     links: {
       page: `/apps/${row.slug}`,
       ios_profile: `/apps/${row.slug}/install.mobileconfig`,
@@ -105,7 +105,7 @@ export async function getApp(slug, { includeDrafts = false } = {}) {
 
 export async function getPublisher(slug) {
   const [p] = await db()`
-    select slug, name, website, bio, avatar_url, verified, created_at from publishers where slug = ${String(slug).toLowerCase()}`;
+    select slug, name, website, bio, avatar_url, verified, claimable, claim_domain, created_at from publishers where slug = ${String(slug).toLowerCase()}`;
   return p ?? null;
 }
 

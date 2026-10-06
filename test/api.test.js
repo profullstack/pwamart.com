@@ -325,6 +325,63 @@ d('store end to end', () => {
   });
 });
 
+d('saasrow import + DNS claims', () => {
+  let imports, inspectFn;
+
+  test('a pass imports complete PWAs only, records the rest, and does not redo them', async () => {
+    imports = await import('../apps/web/src/imports.js');
+    inspectFn = Object.assign((url) => inspectMod.inspect(url), { allowHttp: true });
+    // The importer dedupes by origin, as it must, so each product gets its own port.
+    const mirror = () => Bun.serve({ port: 0, fetch: (r) => fetch(`${base}${new URL(r.url).pathname}`) });
+    const [m1, m2] = [mirror(), mirror()];
+    const products = [
+      { id: 'p1', name: 'Imported Notes', website: `http://localhost:${m1.port}/imp1/`, description: 'Notes from a directory.', category: 'Productivity', tags: ['notes'] },
+      { id: 'p2', name: 'No Manifest', website: `http://localhost:${m2.port}/broken/` },
+      { id: 'p3', name: 'Already here', website: `${base}/notes/` },
+    ];
+    const r = await imports.runSaasrowImport({ products, inspectFn });
+    expect(r).toMatchObject({ considered: 3, imported: 1, not_installable: 1, exists: 1 });
+    const again = await imports.runSaasrowImport({ products, inspectFn });
+    expect(again.considered).toBe(0);
+    const [row] = await db()`select a.slug, a.status, a.verified_at, p.claimable, p.claim_domain, p.slug as pslug from apps a join publishers p on p.id = a.publisher_id where a.source = 'saasrow'`;
+    expect(row).toMatchObject({ status: 'published', verified_at: null, claimable: true, claim_domain: 'localhost' });
+    const page = await (await app.request(`/apps/${row.slug}`)).text();
+    expect(page).toContain('Unclaimed');
+    expect(page).toContain(`/console/claim/${row.pslug}`);
+  });
+
+  test('claim: TXT record, pending until it appears, then the publisher is yours', async () => {
+    const [pub] = await db()`select slug, id from publishers where source = 'saasrow'`;
+    const gus = await keyFor('gus@example.test');
+    const gcall = req(gus.key);
+    const started = await gcall('POST', `/publishers/${pub.slug}/claim`);
+    expect(started.status).toBe(201);
+    const claim = started.body.claim;
+    expect(claim.record).toEqual({ type: 'TXT', name: '_pwamart.localhost', value: expect.stringMatching(/^pwamart-verification=[0-9a-f]{32}$/) });
+    expect(claim.interval_seconds).toBe(15);
+    // Same user again: the same live claim, not a second token.
+    expect((await gcall('POST', `/publishers/${pub.slug}/claim`)).body.claim.id).toBe(claim.id);
+
+    let txt = [];
+    imports.setTxtLookup(async () => txt.map((t) => [t]));
+    const pending = await gcall('POST', `/claims/${claim.id}/check`);
+    expect(pending.body.claim.status).toBe('pending');
+    expect(pending.body.claim.last_result).toBe('no TXT record yet');
+
+    txt = [claim.record.value];
+    await db()`update publisher_claims set next_check_at = now() where id = ${claim.id}`;
+    const turn = await imports.runClaimChecks();
+    expect(turn.verified).toBe(1);
+    const [after] = await db()`select p.claimable, p.org_id, a.verified_by from publishers p join apps a on a.publisher_id = p.id where p.id = ${pub.id}`;
+    expect(after).toMatchObject({ claimable: false, verified_by: 'dns' });
+    const me = (await gcall('GET', '/me')).body;
+    expect(me.publishers.some((p) => p.slug === pub.slug)).toBe(true);
+    // Nobody else can claim it now.
+    const hal = req((await keyFor('hal@example.test')).key);
+    expect((await hal('POST', `/publishers/${pub.slug}/claim`)).status).toBe(409);
+  });
+});
+
 d('billing: periods, upgrades, downgrades, cancel', () => {
   let user, call;
   const DAY = 86400_000;
