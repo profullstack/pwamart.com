@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { listingName, pickIcon, readHead } from '../apps/web/src/inspect.js';
-import { e, safeUrl } from '../apps/web/src/pages.js';
+import { summarizeNetwork } from '../apps/web/src/crawlproof.js';
+import { advertisePage, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
 import { formatList, parse } from '../packages/cli/src/cli.js';
 import { appArgs, desktopEntry, findBrowser } from '../packages/cli/src/install.js';
@@ -44,6 +45,60 @@ describe('pages', () => {
     expect(e(`<a href="x">'`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;');
     expect(safeUrl('javascript:alert(1)')).toBe('');
     expect(safeUrl('https://ok.example/x')).toBe('https://ok.example/x');
+  });
+});
+
+describe('network stats', () => {
+  const earnings = {
+    rangeDays: 30,
+    totals: { pubImpressions: 702075, pubPaidImpressions: 0, pubFreeImpressions: 702075, pubClicks: 29956, pubBilledClicks: 0, pubFreeClicks: 29956, invalidClicks: 151762 },
+  };
+  const slots = [
+    { status: 'active', site: 'a.example' },
+    { status: 'active', site: 'a.example' },
+    { status: 'active', site: 'b.example' },
+    { status: 'inactive', site: 'c.example' },
+  ];
+
+  test('totals add the paid and free halves and leave refused clicks out', () => {
+    const n = summarizeNetwork({ earnings, slots, traffic: [{ site: 'a.example', visitors: 10, pageviews: 30 }, { site: 'b.example', visitors: 90, pageviews: 100 }, null] });
+    expect(n.impressions).toBe(702075);
+    expect(n.clicks).toBe(29956);
+    expect(n.ctr).toBeCloseTo(0.0427, 3);
+    expect(n.slots).toBe(3);
+    expect(n.sites).toBe(2);
+    expect(n.visitors).toBe(100);
+    expect(n.pageviews).toBe(130);
+    expect(n.measuredSites).toBe(2);
+    expect(n.properties[0].site).toBe('b.example');
+  });
+
+  test('no traffic reports means unknown visitors, not zero', () => {
+    expect(summarizeNetwork({ earnings, slots }).visitors).toBe(null);
+  });
+
+  test('the reach tiles stay out until there are numbers, then show them', () => {
+    expect(reachTiles(null)).toBe('');
+    expect(reachTiles(summarizeNetwork({ earnings: { totals: {} }, slots: [] }))).toBe('');
+    const html = reachTiles(summarizeNetwork({ earnings, slots, traffic: [{ site: 'a.example', visitors: 8525, pageviews: 10697 }] }));
+    expect(html).toContain('702K');
+    expect(html).toContain('30K');
+    expect(html).toContain('4.3%');
+    expect(html).toContain('/advertise');
+    expect(compact(1_234_567)).toBe('1.2M');
+  });
+
+  test('the advertise page sells the free ad and renders without network numbers', () => {
+    const page = advertisePage({ stats: { apps: 50, publishers: 3, installs: 0 }, net: null });
+    expect(page).toContain('A free campaign');
+    expect(page).toContain('appear here once they have loaded');
+    const full = advertisePage({
+      stats: { apps: 50, publishers: 3, installs: 0 },
+      net: { ...summarizeNetwork({ earnings, slots, traffic: [{ site: 'a.example', visitors: 8525, pageviews: 10697 }] }), updatedAt: '2026-10-06T12:00:00Z' },
+    });
+    expect(full).toContain('8.5K people a month');
+    expect(full).toContain('a.example');
+    expect(full).toContain('2026-10-06 12:00 UTC');
   });
 });
 

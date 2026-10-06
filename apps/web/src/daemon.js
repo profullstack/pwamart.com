@@ -2,7 +2,7 @@ import { db } from '@pwamart/db';
 import { dueReminders, markReminded } from './billing.js';
 import { config } from './config.js';
 import { sendRenewalReminder } from './mail.js';
-import { expireFeatured, sendBatch } from './newsletter.js';
+import { expireFeatured, sendBatch, syncFeaturedAds } from './newsletter.js';
 
 /**
  * The background loop inside the web process: one timer, several jobs, each with
@@ -107,5 +107,7 @@ addJob('saasrow-import', 20 * 60_000, async () => {
 
 // A paid feature comes off the home page when its week is up (staff picks never do).
 addJob('featured-expiry', 10 * 60_000, () => expireFeatured());
+// Its free CrawlProof campaign starts after the payment settles and pauses when the week ends.
+addJob('featured-ads', 2 * 60_000, () => syncFeaturedAds());
 // A queued issue goes out 50 subscribers a minute, each delivery claimed before it is sent.
 addJob('newsletter-send', 60_000, () => sendBatch());

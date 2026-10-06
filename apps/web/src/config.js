@@ -28,6 +28,13 @@ export const config = {
     get slot() {
       return env('CRAWLPROOF_SLOT', '36088096-9570-4417-856c-721de727580c');
     },
+    // Server side only: the free ad every featured app gets, and the /advertise numbers.
+    get apiToken() {
+      return env('CRAWLPROOF_API_TOKEN');
+    },
+    get apiUrl() {
+      return env('CRAWLPROOF_API_URL', 'https://crawlproof.com').replace(/\/$/, '');
+    },
   },
   mail: {
     get enabled() {

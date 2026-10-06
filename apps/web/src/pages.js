@@ -91,7 +91,7 @@ ${
   <nav>
     <a href="/apps">Browse</a><a href="/publishers">Publishers</a><a href="/developers">Developers</a><a href="/pricing">Pricing</a>
     <a href="/developers#api">API</a><a href="/developers#mcp">MCP</a><a href="/developers#cli">CLI &amp; TUI</a>
-    <a href="/featured">Get featured</a><a href="/newsletter">Newsletter</a>
+    <a href="/featured">Get featured</a><a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a>
     <a href="/llms.txt">llms.txt</a><a href="https://github.com/profullstack/pwamart.com">GitHub</a>
   </nav>
 </div></footer>
@@ -478,7 +478,7 @@ export function publisherPage({ publisher, list, stats }) {
 
 /* ------------------------------------------------------------- pricing -- */
 
-export function pricingPage({ stats }) {
+export function pricingPage({ stats, net = null }) {
   const p = PLANS;
   const body = `<div class="wrap">
   <section class="block" style="padding-top:48px;text-align:center">
@@ -509,9 +509,10 @@ export function pricingPage({ stats }) {
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Limits</div><h3>Counted per account</h3><p>Publishers and apps across every org you created. A lapsed plan never takes a live listing down; it only stops new ones.</p></div>
     <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL and more. One payment adds a year.</p></div>
-    <div class="tile"><div class="k">Get featured</div><h3>$19, one time</h3><p>A week on the home page's Featured row and at the top of the store, plus a slot in the next newsletter. <a href="/featured">How it works →</a></p></div>
+    <div class="tile"><div class="k">Get featured</div><h3>$19, one time</h3><p>A week on the home page's Featured row and at the top of the store, a slot in the next newsletter, and a free ad across our network. <a href="/advertise">See the reach →</a></p></div>
     <div class="tile"><div class="k">Your app</div><h3>Keep 100%</h3><p>pwamart only lists and installs. Subscriptions inside your app are between you and your users.</p></div>
   </div></section>
+  ${reachTiles(net)}
 </div>`;
   return layout({ title: 'Pricing', path: '/pricing', body, stats });
 }
@@ -593,26 +594,28 @@ const subscribeForm = (source) => `<form method="post" action="/newsletter" styl
     <button class="btn primary" type="submit">Subscribe</button>
   </form>`;
 
-export function featuredPage({ stats, featured = [], subscribers = 0, priceCents = 1900, days = 7 }) {
+export function featuredPage({ stats, net = null, featured = [], subscribers = 0, priceCents = 1900, days = 7 }) {
   const price = `$${priceCents / 100}`;
   const body = `<div class="wrap" style="max-width:900px">
   <section class="block" style="padding-top:48px">
     <div class="eyebrow">For publishers</div>
     <h1 style="margin:10px 0 14px">Get featured on pwamart and in our newsletter for ${price}.</h1>
-    <p class="lede">One payment, in crypto through CoinPay. Your app gets the home page's Featured row and the top of the store for ${days} days, and a spot at the top of the next pwamart newsletter.</p>
+    <p class="lede">One payment, in crypto through CoinPay. Your app gets the home page's Featured row and the top of the store for ${days} days, a spot at the top of the next pwamart newsletter, and a free ad across our CrawlProof ad network for the same ${days} days.</p>
     <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn primary" href="/console/feature">Feature an app for ${price}</a><a class="btn" href="/console/submit">List an app first</a></p>
   </section>
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Home page</div><h3>${days} days</h3><p>The Featured row on pwamart.com, and first place in the default sort. Buy again while it runs and the time adds on.</p></div>
     <div class="tile"><div class="k">Newsletter</div><h3>The next issue</h3><p>Featured apps lead the issue, ahead of the week's new listings${subscribers ? `, to ${e(subscribers)} confirmed readers` : ''}.</p></div>
+    <div class="tile"><div class="k">Ad network</div><h3>A free campaign</h3><p>A CrawlProof ad for your app across our sites for the same ${days} days${net?.sites ? ` (${e(net.sites)} sites, ${e(compact(net.impressions))} ad impressions a month)` : ''}. We write the creatives.</p></div>
     <div class="tile"><div class="k">Payment</div><h3>${price} in crypto</h3><p>USDC, BTC, ETH, SOL and more through CoinPay. It goes live the moment the payment settles.</p></div>
   </div></section>
+  ${reachTiles(net)}
   <section class="block">
     <h2>How it works</h2>
     <ol class="muted" style="line-height:1.8">
       <li>List your web app (free) and publish it.</li>
       <li>In the console, open the app and choose <b>Get featured · ${price}</b>, or run <code>pwamart feature &lt;slug&gt;</code>.</li>
-      <li>Pay with CoinPay. The app is featured as soon as the payment settles.</li>
+      <li>Pay with CoinPay. The app is featured as soon as the payment settles, and its ad starts within minutes.</li>
     </ol>
   </section>
   ${
@@ -624,7 +627,7 @@ export function featuredPage({ stats, featured = [], subscribers = 0, priceCents
 </div>`;
   return layout({
     title: `Get featured for ${price}`,
-    description: `Feature your web app on pwamart's home page for ${days} days and in the next pwamart newsletter for ${price}, paid in crypto.`,
+    description: `Feature your web app on pwamart's home page for ${days} days, in the next pwamart newsletter and across our ad network for ${price}, paid in crypto.`,
     path: '/featured',
     body,
     stats,
@@ -643,6 +646,89 @@ export function newsletterPage({ stats, notice = null, tone = '' }) {
   <section class="block"><p class="muted">Publishers: <a href="/featured">get your app into the next issue and onto the home page for $19 →</a></p></section>
 </div>`;
   return layout({ title: 'Newsletter', description: 'The pwamart newsletter: new and featured Progressive Web Apps, about once a week.', path: '/newsletter', body, stats });
+}
+
+/* ------------------------------------------------------------- network -- */
+
+/** 8525 -> "8.5K", 702075 -> "702K", 1234567 -> "1.2M": never rounds a small number up a whole thousand. */
+export const compact = (n) =>
+  new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: n < 10_000 || n >= 1e6 ? 1 : 0 }).format(n);
+const pct = (x) => `${(x * 100).toFixed(1)}%`;
+const BIG = 'font:400 40px/1.1 var(--serif)';
+
+/**
+ * The network in four tiles, for the pages that sell featuring. Nothing renders
+ * until the first CrawlProof refresh lands, rather than a row of zeros.
+ */
+export function reachTiles(net, { link = true } = {}) {
+  if (!net || !net.impressions) return '';
+  const tiles = [
+    net.visitors ? ['People', compact(net.visitors), `human visitors in ${net.days} days across ${net.measuredSites} of our sites`] : null,
+    ['Ad impressions', compact(net.impressions), `served on the CrawlProof network in ${net.days} days`],
+    ['Ad clicks', compact(net.clicks), `${pct(net.ctr)} click-through, refused and bot clicks left out`],
+    ['Ad slots', String(net.slots), `live on ${net.sites} sites, from blogs to terminal banners`],
+  ].filter(Boolean);
+  return `<section class="block"><div class="block-head"><h2>The network behind it</h2>${link ? '<a href="/advertise">All the numbers →</a>' : ''}</div><div class="bigrow">
+    ${tiles.map(([k, v, p]) => `<div class="tile"><div class="k">${e(k)}</div><h3 style="${BIG}">${e(v)}</h3><p>${e(p)}.</p></div>`).join('')}
+  </div></section>`;
+}
+
+export function advertisePage({ stats, net = null, subscribers = 0, priceCents = 1900, days = 7 }) {
+  const price = `$${priceCents / 100}`;
+  const p = PLANS;
+  const top = (net?.properties ?? []).slice(0, 15);
+  const cell = 'padding:8px 6px';
+  const body = `<div class="wrap" style="max-width:980px">
+  <section class="block" style="padding-top:48px">
+    <div class="eyebrow">Advertise · Get featured</div>
+    <h1 style="margin:10px 0 14px">Put your app in front of ${net?.visitors ? `${e(compact(net.visitors))} people a month` : 'the whole Profullstack network'}.</h1>
+    <p class="lede">pwamart is one of ${net?.sites ? e(net.sites) : 'dozens of'} sites on our own ad network. Featuring an app for ${price} puts it on pwamart's home page and at the top of the next newsletter, and runs a free ad for it across the network for the same ${days} days.</p>
+    <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn primary" href="/console/feature">Feature an app for ${price}</a><a class="btn" href="/console/submit">List an app free</a></p>
+  </section>
+  ${reachTiles(net, { link: false })}
+  <section class="block"><div class="block-head"><h2>pwamart itself</h2></div><div class="bigrow">
+    <div class="tile"><div class="k">Apps</div><h3 style="${BIG}">${e(compact(stats?.apps ?? 0))}</h3><p>installable web apps listed.</p></div>
+    <div class="tile"><div class="k">Publishers</div><h3 style="${BIG}">${e(compact(stats?.publishers ?? 0))}</h3><p>brands shipping on the open web.</p></div>
+    <div class="tile"><div class="k">Installs</div><h3 style="${BIG}">${e(compact(stats?.installs ?? 0))}</h3><p>from the browser, CLI, TUI, desktop app and AI agents.</p></div>
+    <div class="tile"><div class="k">Surfaces</div><h3 style="${BIG}">7</h3><p>web, PWA, CLI, TUI, MCP, API and desktop. A featured app comes first on all of them.</p></div>
+  </div></section>
+  <section class="block"><div class="block-head"><h2>What ${price} buys</h2></div><div class="bigrow">
+    <div class="tile"><div class="k">Home page</div><h3>${days} days</h3><p>The Featured row on pwamart.com and first place in the default sort, in every client.</p></div>
+    <div class="tile"><div class="k">Newsletter</div><h3>The next issue</h3><p>Featured apps lead the issue${subscribers ? `, to ${e(subscribers)} confirmed readers` : ''}.</p></div>
+    <div class="tile"><div class="k">Ad network</div><h3>A free campaign</h3><p>A CrawlProof ad for your app across our sites for the same ${days} days. We write the creatives; it costs nothing extra.</p></div>
+    <div class="tile"><div class="k">Payment</div><h3>${price} in crypto</h3><p>USDC, BTC, ETH, SOL and more through CoinPay. Live the moment it settles.</p></div>
+  </div></section>
+  ${
+    top.length
+      ? `<section class="block"><div class="block-head"><h2>Where the ads run</h2></div>
+  <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14.5px">
+    <thead><tr style="text-align:left;color:var(--muted);font:12px var(--mono);text-transform:uppercase;letter-spacing:.06em"><th style="${cell}">Site</th><th style="${cell};text-align:right">Visitors · 30d</th><th style="${cell};text-align:right">Pageviews · 30d</th></tr></thead>
+    <tbody>${top
+      .map(
+        (s) =>
+          `<tr style="border-top:1px solid var(--line)"><td style="${cell}"><a href="https://${e(s.site)}" rel="noopener">${e(s.site)}</a></td><td style="${cell};text-align:right">${e(s.visitors.toLocaleString('en-US'))}</td><td style="${cell};text-align:right">${e(s.pageviews.toLocaleString('en-US'))}</td></tr>`,
+      )
+      .join('')}</tbody>
+  </table></div>${net.properties.length > top.length ? `<p class="muted">And ${e(net.properties.length - top.length)} more.</p>` : ''}</section>`
+      : ''
+  }
+  <section class="block"><div class="block-head"><h2>Listing more than one app?</h2><a href="/pricing">Pricing →</a></div><div class="bigrow">
+    <div class="tile"><div class="k">${p.pro.name} · $10/yr</div><h3>10 publishers, 100 apps</h3><p>Run several brands from one account. <a href="/console/billing?plan=pro">Get Pro →</a></p></div>
+    <div class="tile"><div class="k">${p.unlimited.name} · $199/yr</div><h3>No limits, plus teams</h3><p>Shared orgs, invited members, teams and projects. <a href="/console/billing?plan=unlimited">Get Unlimited →</a></p></div>
+  </div></section>
+  <p class="muted" style="font-size:13px">${
+    net
+      ? `Network figures from <a href="https://crawlproof.com">CrawlProof</a>: the last ${e(net.days)} days, people only (declared bots and crawlers removed), visitors summed site by site. Refreshed every few hours; last ${e(String(net.updatedAt ?? '').slice(0, 16).replace('T', ' '))} UTC.`
+      : 'Network figures from CrawlProof appear here once they have loaded.'
+  }</p>
+</div>`;
+  return layout({
+    title: 'Advertise your web app',
+    description: `Feature your web app on pwamart, in the newsletter and across the Profullstack ad network for ${price}.`,
+    path: '/advertise',
+    body,
+    stats,
+  });
 }
 
 /* ---------------------------------------------------------- publishers -- */

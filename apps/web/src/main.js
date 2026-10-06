@@ -18,6 +18,9 @@ if (configured()) {
   if (process.env.PWAMART_DAEMON !== 'off') (await import('./daemon.js')).startDaemon();
 }
 
+// The /advertise figures load in the background so the first visitor is not the one to wait.
+if (config.crawlproof.apiToken) (await import('./crawlproof.js')).refreshNetwork();
+
 const port = Number(process.env.PORT || 3000);
 const server = Bun.serve({ port, fetch: app.fetch, idleTimeout: 30 });
 console.log(
