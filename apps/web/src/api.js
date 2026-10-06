@@ -10,6 +10,7 @@ import { categoryCounts, getApp, getPublisher, listApps, recordInstall, reviewsF
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, inspect, verifyOrigin } from './inspect.js';
 import { sendLoginLink, sendOrgInvite } from './mail.js';
+import * as newsletter from './newsletter.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -648,6 +649,47 @@ api.post('/orgs/:org/projects', async (c) => {
   return c.json({ project: p }, 201);
 });
 
+/* -------------------------------------------------------------- featured -- */
+
+/** What featuring this app costs, and whether it is featured now. */
+api.get('/apps/:slug/featured', async (c) => {
+  const { row } = await appFor(c, c.req.param('slug'));
+  return c.json({ ...(await newsletter.featuredState(row.id)), payments_enabled: paymentsEnabled() });
+});
+
+/**
+ * Get featured for $19: a week on the home page's Featured row (and at the top of
+ * the default sort), plus a slot in the next newsletter issue. Paid once, in
+ * crypto through CoinPay; the webhook does the rest.
+ */
+api.post('/apps/:slug/feature', async (c) => {
+  const { user, row } = await appFor(c, c.req.param('slug'));
+  if (row.status !== 'published') return c.json({ error: 'publish the app first; only a live listing can be featured' }, 409);
+  if (!paymentsEnabled()) return c.json({ error: 'payments are not switched on yet' }, 503);
+  const { checkoutUrl } = await createCheckout({
+    user,
+    amountCents: newsletter.FEATURED.priceCents,
+    description: `pwamart: feature ${row.name} for ${newsletter.FEATURED.days} days + the next newsletter`,
+    metadata: { user_id: user.id, product: 'featured', app_id: row.id, app_slug: row.slug },
+    blockchain: config.coinpay.defaultChain,
+    // Crypto only: never 'card' or 'both', which open a Stripe session (Stripe is off-limits).
+    paymentMethod: 'crypto',
+    successUrl: `${config.siteUrl}/console/apps/${row.slug}?featured=1`,
+    cancelUrl: `${config.siteUrl}/console/apps/${row.slug}`,
+  });
+  return c.json({ checkout_url: checkoutUrl, price_cents: newsletter.FEATURED.priceCents, days: newsletter.FEATURED.days });
+});
+
+/* ------------------------------------------------------------ newsletter -- */
+
+/** Public: subscribe an address. A confirmation email goes out; nothing is sent until it is tapped. */
+api.post('/newsletter/subscribe', async (c) => {
+  const { email, source } = await body(c);
+  const r = await newsletter.subscribe(email, { source: source ?? 'api' });
+  if (!r.ok) return c.json({ error: r.error }, 400);
+  return c.json({ ok: true, message: 'check your inbox for the confirmation link' });
+});
+
 /* --------------------------------------------------------------- billing -- */
 
 api.get('/billing', async (c) => {
@@ -656,7 +698,9 @@ api.get('/billing', async (c) => {
     billingState(user.id),
     usageFor(user.id),
     db()`select p.amount_cents, p.status, p.created_at, p.raw->'data'->'metadata'->>'plan' as plan,
-                exists (select 1 from plan_grants g where g.payment_id = p.id) as applied
+                p.raw->'data'->'metadata'->>'product' as product, p.raw->'data'->'metadata'->>'app_slug' as app_slug,
+                exists (select 1 from plan_grants g where g.payment_id = p.id)
+                  or exists (select 1 from featured_slots f where f.payment_id = p.id) as applied
          from payments p where p.user_id = ${user.id} order by p.created_at desc limit 24`,
   ]);
   return c.json({ ...state, usage, payments, plans: PLANS, payments_enabled: paymentsEnabled() });
@@ -731,6 +775,7 @@ export async function coinpayWebhook(c) {
   }
   const result = await settleWebhook(payload, {
     grant: async (tx, { meta, payment }) => {
+      if (meta.product === 'featured') return newsletter.grantFeatured(tx, { meta, payment });
       if (!meta.user_id || !payment || !PLANS[meta.plan] || meta.plan === 'free') return null;
       // The amount is the one WE recorded at checkout. An upgrade was priced with a
       // credit, so only a full-price purchase is held to the list price.
@@ -757,11 +802,48 @@ api.post('/admin/apps/:slug', async (c) => {
   const row = await getApp(c.req.param('slug'), { includeDrafts: true });
   if (!row) fail(404, 'no such app');
   const b = await body(c);
-  if (b.featured !== undefined) await db()`update apps set featured = ${Boolean(b.featured)} where id = ${row.id}`;
+  // A staff toggle is a staff pick: no end date, so the expiry job leaves it alone.
+  if (b.featured !== undefined) await db()`update apps set featured = ${Boolean(b.featured)}, featured_until = null where id = ${row.id}`;
   if (b.verified) await db()`update apps set verified_at = coalesce(verified_at, now()), verified_by = coalesce(verified_by, 'staff') where id = ${row.id}`;
   if (b.status && ['draft', 'published', 'unlisted', 'removed'].includes(b.status))
     await db()`update apps set status = ${b.status}::app_status, published_at = case when ${b.status} = 'published' then coalesce(published_at, now()) else published_at end where id = ${row.id}`;
   return c.json({ app: shape(await getApp(row.slug, { includeDrafts: true })) });
+});
+
+/* ------------------------------------------------------ admin newsletter -- */
+
+api.get('/admin/newsletter', async (c) => {
+  await requireAdmin(c);
+  return c.json({ subscribers: await newsletter.subscriberCounts(), issues: await newsletter.listIssues() });
+});
+
+/** Draft the next issue from the apps owed a paid slot and the week's new apps. */
+api.post('/admin/newsletter/issues', async (c) => {
+  const user = await requireAdmin(c);
+  const { subject, intro } = await body(c);
+  return c.json({ issue: await newsletter.draftIssue({ userId: user.id, subject, intro }) }, 201);
+});
+
+api.get('/admin/newsletter/issues/:id', async (c) => {
+  await requireAdmin(c);
+  const issue = await newsletter.getIssue(c.req.param('id'));
+  if (!issue) fail(404, 'no such issue');
+  return c.json({ issue });
+});
+
+api.patch('/admin/newsletter/issues/:id', async (c) => {
+  await requireAdmin(c);
+  const issue = await newsletter.updateIssue(c.req.param('id'), await body(c));
+  if (!issue) fail(409, 'only a draft can be edited');
+  return c.json({ issue });
+});
+
+/** Queue an issue; the daemon sends it in batches. A draft can be queued once. */
+api.post('/admin/newsletter/issues/:id/send', async (c) => {
+  await requireAdmin(c);
+  const issue = await newsletter.queueIssue(c.req.param('id'));
+  if (!issue) fail(409, 'only a draft can be sent, and only once');
+  return c.json({ issue, subscribers: await newsletter.subscriberCounts() });
 });
 
 api.post('/admin/publishers/:slug', async (c) => {

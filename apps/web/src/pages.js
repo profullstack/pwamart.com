@@ -90,6 +90,7 @@ ${
   <nav>
     <a href="/apps">Browse</a><a href="/developers">Developers</a><a href="/pricing">Pricing</a>
     <a href="/developers#api">API</a><a href="/developers#mcp">MCP</a><a href="/developers#cli">CLI &amp; TUI</a>
+    <a href="/featured">Get featured</a><a href="/newsletter">Newsletter</a>
     <a href="/llms.txt">llms.txt</a><a href="https://github.com/profullstack/pwamart.com">GitHub</a>
   </nav>
 </div></footer>
@@ -251,7 +252,7 @@ export function homePage({ featured, top, fresh, counts, stats }) {
 
   ${
     featured.length
-      ? `<section class="block"><div class="block-head"><h2>Featured</h2></div>
+      ? `<section class="block"><div class="block-head"><h2>Featured</h2><a href="/featured">Get featured · $19 →</a></div>
   <div class="feature-grid">${featured
     .slice(0, 4)
     .map(
@@ -358,7 +359,7 @@ export function appPage({ app, publisher, reviews, related, stats }) {
   <section class="app-head">
     ${icon(app, 'icon', 128)}
     <div>
-      <div class="eyebrow"><a href="/apps?category=${e(app.category)}" style="text-decoration:none">${e(app.category_name)}</a></div>
+      <div class="eyebrow"><a href="/apps?category=${e(app.category)}" style="text-decoration:none">${e(app.category_name)}</a>${app.featured ? ' · <a href="/featured" style="text-decoration:none;color:#e2582f">★ Featured</a>' : ''}</div>
       <h1 style="margin-top:8px">${e(app.name)}</h1>
       <div class="by">by <a href="/publishers/${e(app.publisher.slug)}">${e(app.publisher.name)}</a> ${app.publisher.verified ? CHECK : ''} <span class="muted">· ${e(host)}</span></div>
       ${app.summary ? `<p class="lede" style="margin:12px 0 0;font-size:17px">${e(app.summary)}</p>` : ''}
@@ -505,6 +506,7 @@ export function pricingPage({ stats }) {
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Limits</div><h3>Counted per account</h3><p>Publishers and apps across every org you created. A lapsed plan never takes a live listing down; it only stops new ones.</p></div>
     <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL and more. One payment adds a year.</p></div>
+    <div class="tile"><div class="k">Get featured</div><h3>$19, one time</h3><p>A week on the home page's Featured row and at the top of the store, plus a slot in the next newsletter. <a href="/featured">How it works →</a></p></div>
     <div class="tile"><div class="k">Your app</div><h3>Keep 100%</h3><p>pwamart only lists and installs. Subscriptions inside your app are between you and your users.</p></div>
   </div></section>
 </div>`;
@@ -578,4 +580,64 @@ export function notFoundPage({ stats }) {
     stats,
     noindex: true,
   });
+}
+
+/* -------------------------------------------------- featured + newsletter -- */
+
+const subscribeForm = (source) => `<form method="post" action="/newsletter" style="max-width:520px;margin:18px 0 0;display:flex;gap:8px;flex-wrap:wrap">
+    <input type="hidden" name="source" value="${e(source)}">
+    <input name="email" type="email" required placeholder="you@example.com" aria-label="Email address" autocomplete="email" style="flex:1;min-width:220px;padding:12px 14px;border-radius:12px;border:1px solid rgba(127,127,127,.35);font:inherit;background:transparent;color:inherit">
+    <button class="btn primary" type="submit">Subscribe</button>
+  </form>`;
+
+export function featuredPage({ stats, featured = [], subscribers = 0, priceCents = 1900, days = 7 }) {
+  const price = `$${priceCents / 100}`;
+  const body = `<div class="wrap" style="max-width:900px">
+  <section class="block" style="padding-top:48px">
+    <div class="eyebrow">For publishers</div>
+    <h1 style="margin:10px 0 14px">Get featured on pwamart and in our newsletter for ${price}.</h1>
+    <p class="lede">One payment, in crypto through CoinPay. Your app gets the home page's Featured row and the top of the store for ${days} days, and a spot at the top of the next pwamart newsletter.</p>
+    <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn primary" href="/console/feature">Feature an app for ${price}</a><a class="btn" href="/console/submit">List an app first</a></p>
+  </section>
+  <section class="block"><div class="bigrow">
+    <div class="tile"><div class="k">Home page</div><h3>${days} days</h3><p>The Featured row on pwamart.com, and first place in the default sort. Buy again while it runs and the time adds on.</p></div>
+    <div class="tile"><div class="k">Newsletter</div><h3>The next issue</h3><p>Featured apps lead the issue, ahead of the week's new listings${subscribers ? `, to ${e(subscribers)} confirmed readers` : ''}.</p></div>
+    <div class="tile"><div class="k">Payment</div><h3>${price} in crypto</h3><p>USDC, BTC, ETH, SOL and more through CoinPay. It goes live the moment the payment settles.</p></div>
+  </div></section>
+  <section class="block">
+    <h2>How it works</h2>
+    <ol class="muted" style="line-height:1.8">
+      <li>List your web app (free) and publish it.</li>
+      <li>In the console, open the app and choose <b>Get featured · ${price}</b>, or run <code>pwamart feature &lt;slug&gt;</code>.</li>
+      <li>Pay with CoinPay. The app is featured as soon as the payment settles.</li>
+    </ol>
+  </section>
+  ${
+    featured.length
+      ? `<section class="block"><div class="block-head"><h2>Featured right now</h2></div><p>${featured.map((a) => `<a href="/apps/${e(a.slug)}">${e(a.name)}</a>`).join(' · ')}</p></section>`
+      : ''
+  }
+  <section class="block"><h2>Read it yourself</h2><p class="muted">New and featured web apps, about once a week.</p>${subscribeForm('featured')}</section>
+</div>`;
+  return layout({
+    title: `Get featured for ${price}`,
+    description: `Feature your web app on pwamart's home page for ${days} days and in the next pwamart newsletter for ${price}, paid in crypto.`,
+    path: '/featured',
+    body,
+    stats,
+  });
+}
+
+export function newsletterPage({ stats, notice = null, tone = '' }) {
+  const body = `<div class="wrap" style="max-width:760px">
+  <section class="block" style="padding-top:48px">
+    <div class="eyebrow">Newsletter</div>
+    <h1 style="margin:10px 0 14px">New and featured web apps, about once a week.</h1>
+    <p class="lede">Apps you install from the browser: no app store, no review queue. One email a week at most, and one tap to leave.</p>
+    ${notice ? `<p role="status" style="font-weight:600;margin-top:18px;${tone === 'bad' ? 'color:#c0392b' : ''}">${e(notice)}</p>` : ''}
+    ${subscribeForm('newsletter')}
+  </section>
+  <section class="block"><p class="muted">Publishers: <a href="/featured">get your app into the next issue and onto the home page for $19 →</a></p></section>
+</div>`;
+  return layout({ title: 'Newsletter', description: 'The pwamart newsletter: new and featured Progressive Web Apps, about once a week.', path: '/newsletter', body, stats });
 }

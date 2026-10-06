@@ -74,6 +74,17 @@ export const TOOLS = [
     description: 'Publish a verified, installable app to the store. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
+  {
+    name: 'feature_app',
+    description:
+      'Get a published app featured for $19: 7 days on the pwamart home page and a slot in the next newsletter. Returns a CoinPay crypto checkout URL for a human to pay. Needs an API key.',
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
+    name: 'subscribe_newsletter',
+    description: 'Subscribe an email address to the pwamart newsletter. A confirmation email is sent; nothing else is until it is tapped.',
+    inputSchema: { type: 'object', properties: { email: { type: 'string' } }, required: ['email'], additionalProperties: false },
+  },
 ];
 
 export function installInstructions(app, platform = 'desktop') {
@@ -125,6 +136,10 @@ export async function callTool(name, args, call, siteUrl) {
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/verify`, json('POST')));
     case 'publish_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/publish`, json('POST')));
+    case 'feature_app':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/feature`, json('POST')));
+    case 'subscribe_newsletter':
+      return text(await call('/newsletter/subscribe', json('POST', { email: args.email, source: 'mcp' })));
     default:
       throw Object.assign(new Error(`unknown tool ${name}`), { code: -32602 });
   }

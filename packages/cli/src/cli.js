@@ -29,6 +29,8 @@ Publish (needs an API key from pwamart.com/console/keys)
   pwamart verify <slug>
   pwamart publish <slug>
   pwamart apps                           your apps and their status
+  pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
+  pwamart subscribe <email>              the pwamart newsletter (double opt-in)
 
   pwamart health | version
 
@@ -207,6 +209,29 @@ export async function main(argv = process.argv.slice(2)) {
     case 'publish': {
       const r = await api.publish(auth, rest[0]);
       out(r, `✓ ${rest[0]} is ${r.status}: ${auth.server}/apps/${rest[0]}`);
+      return 0;
+    }
+    case 'feature': {
+      if (!rest[0]) throw new Error('usage: pwamart feature <slug>');
+      const st = await api.featured(auth, rest[0]);
+      const r = await api.feature(auth, rest[0]);
+      out(
+        r,
+        [
+          st.featured ? `${rest[0]} is featured${st.featured_until ? ` until ${String(st.featured_until).slice(0, 10)}; this adds ${r.days} days` : ''}.` : '',
+          `Pay $${r.price_cents / 100} in crypto to feature ${rest[0]} for ${r.days} days and in the next newsletter:`,
+          `  ${r.checkout_url}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+      if (!flags.json && !flags['no-open']) await openUrl(r.checkout_url).catch(() => {});
+      return 0;
+    }
+    case 'subscribe': {
+      if (!rest[0]) throw new Error('usage: pwamart subscribe <email>');
+      const r = await api.subscribe(auth, rest[0]);
+      out(r, `✓ ${r.message}`);
       return 0;
     }
     case 'apps': {
