@@ -209,3 +209,56 @@ for (const img of document.querySelectorAll('img.icon')) {
   if (img.complete && img.naturalWidth === 0) swap();
   else img.addEventListener('error', swap, { once: true });
 }
+
+// Share + badge builder (app pages): copy buttons, dark/light badge, live post links.
+const share = document.getElementById('share');
+if (share) {
+  const copy = async (text, btn) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      document.body.append(t);
+      t.select();
+      document.execCommand('copy');
+      t.remove();
+    }
+    const was = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => (btn.textContent = was), 1400);
+  };
+  share.querySelectorAll('[data-copy]').forEach((btn) =>
+    btn.addEventListener('click', () => copy(btn.closest('.snip').querySelector('code').textContent, btn)),
+  );
+  share.querySelectorAll('[data-theme]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const theme = btn.dataset.theme;
+      share.querySelectorAll('[data-theme]').forEach((b) => {
+        b.classList.toggle('on', b === btn);
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      const img = share.querySelector('[data-badge] img');
+      img.src = img.dataset[theme];
+      share.querySelectorAll('code[data-dark]').forEach((c) => (c.textContent = c.dataset[theme]));
+    }),
+  );
+  const post = share.querySelector('#share-post');
+  const page = post.dataset.page;
+  const title = post.dataset.title;
+  const enc = encodeURIComponent;
+  const hrefs = {
+    x: (t) => `https://x.com/intent/post?text=${enc(t)}`,
+    bluesky: (t) => `https://bsky.app/intent/compose?text=${enc(t)}`,
+    email: (t) => `mailto:?subject=${enc(title)}&body=${enc(t)}`,
+  };
+  post.addEventListener('input', () => {
+    for (const [net, f] of Object.entries(hrefs)) share.querySelector(`[data-net="${net}"]`).href = f(post.value);
+  });
+  share.querySelector('[data-copy-post]').addEventListener('click', (ev) => copy(post.value, ev.currentTarget));
+  const native = share.querySelector('[data-native-share]');
+  if (navigator.share) {
+    native.hidden = false;
+    native.addEventListener('click', () => navigator.share({ title, text: post.value, url: page }).catch(() => {}));
+  }
+}

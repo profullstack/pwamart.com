@@ -214,6 +214,19 @@ d('store end to end', () => {
     expect(csp).toContain('script-src \'self\' \'unsafe-inline\' https://crawlproof.com');
   });
 
+  test('app pages carry the badge builder and the badges are served', async () => {
+    const page = await (await app.request('/apps/notes')).text();
+    expect(page).toContain('id="share"');
+    expect(page).toContain('[![Get notes on pwamart](http://localhost:3999/badges/get-it-on-pwamart.svg)](http://localhost:3999/apps/notes)');
+    expect(page).toContain('https://x.com/intent/post?text=');
+    expect(page).toContain('https://bsky.app/intent/compose?text=');
+    for (const f of ['get-it-on-pwamart.svg', 'get-it-on-pwamart-light.svg', 'get-it-on-pwamart@2x.png', 'install-icon.svg', 'install-icon-512.png']) {
+      const r = await app.request(`/badges/${f}`);
+      expect(r.status).toBe(200);
+    }
+    expect((await app.request('/badges/..%2Fapi.js')).status).toBe(404);
+  });
+
   test('page values are escaped', async () => {
     await call('PATCH', '/apps/notes', { summary: '<script>alert(1)</script>' });
     const page = await (await app.request('/apps/notes')).text();

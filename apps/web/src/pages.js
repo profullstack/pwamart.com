@@ -104,6 +104,75 @@ ${
  * creative follows the reader's light/dark preference itself (no theme param).
  * text_link is the one fluid format (40px, carries its own "Sponsored" mark).
  */
+/**
+ * The share + badge builder on an app page: the store-button badge (dark/light),
+ * copyable Markdown / HTML / text / link snippets, and a ready post with share
+ * links per network. Everything is server-rendered and works without JS; store.js
+ * adds Copy buttons, the theme toggle and live-editing of the post.
+ */
+export function shareBuilder(app) {
+  const site = config.siteUrl;
+  const page = `${site}/apps/${app.slug}`;
+  const alt = `Get ${app.name} on pwamart`;
+  const snippets = (theme) => {
+    const src = `${site}/badges/get-it-on-pwamart${theme === 'light' ? '-light' : ''}.svg`;
+    return {
+      markdown: `[![${alt}](${src})](${page})`,
+      html: `<a href="${page}"><img src="${src}" alt="${alt}" width="135" height="40"></a>`,
+      text: `Get ${app.name} on pwamart: ${page}`,
+      link: page,
+    };
+  };
+  const dark = snippets('dark');
+  const light = snippets('light');
+  const post = `${app.name}${app.summary ? `: ${app.summary}` : ''}\n\nInstall it on any device, no app store needed:\n${page}`;
+  const enc = encodeURIComponent;
+  const nets = [
+    ['x', 'X', `https://x.com/intent/post?text=${enc(post)}`],
+    ['bluesky', 'Bluesky', `https://bsky.app/intent/compose?text=${enc(post)}`],
+    ['linkedin', 'LinkedIn', `https://www.linkedin.com/sharing/share-offsite/?url=${enc(page)}`],
+    ['reddit', 'Reddit', `https://www.reddit.com/submit?url=${enc(page)}&title=${enc(`${app.name}: install it on any device`)}`],
+    ['hn', 'Hacker News', `https://news.ycombinator.com/submitlink?u=${enc(page)}&t=${enc(app.name)}`],
+    ['facebook', 'Facebook', `https://www.facebook.com/sharer/sharer.php?u=${enc(page)}`],
+    ['email', 'Email', `mailto:?subject=${enc(app.name)}&body=${enc(post)}`],
+  ];
+  const block = (kind, label, val) => `
+      <div class="snip" data-kind="${kind}">
+        <div class="snip-head"><span>${label}</span><button class="btn sm" type="button" data-copy>Copy</button></div>
+        <pre><code data-dark="${e(dark[kind])}" data-light="${e(light[kind])}">${e(val)}</code></pre>
+      </div>`;
+  return `<section class="share" id="share">
+    <h2 style="margin:36px 0 6px">Share this app</h2>
+    <p class="muted" style="margin:0 0 16px">Put the badge in your README, site or socials. It links straight to this page.</p>
+    <div class="share-grid">
+      <div class="panel">
+        <div class="badge-row">
+          <a href="${e(page)}" class="badge-preview" data-badge><img src="/badges/get-it-on-pwamart.svg" alt="${e(alt)}" width="135" height="40" data-dark="/badges/get-it-on-pwamart.svg" data-light="/badges/get-it-on-pwamart-light.svg"></a>
+          <div class="seg" role="radiogroup" aria-label="Badge style">
+            <button type="button" class="on" data-theme="dark" aria-pressed="true">Dark</button>
+            <button type="button" data-theme="light" aria-pressed="false">Light</button>
+          </div>
+        </div>
+        ${block('markdown', 'Markdown (GitHub README)', dark.markdown)}
+        ${block('html', 'HTML', dark.html)}
+        ${block('text', 'Text', dark.text)}
+        ${block('link', 'Link', dark.link)}
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">PNG: <a href="/badges/get-it-on-pwamart.png">1x</a> · <a href="/badges/get-it-on-pwamart@2x.png">2x</a> · <a href="/badges/get-it-on-pwamart@3x.png">3x</a> · light <a href="/badges/get-it-on-pwamart-light@2x.png">2x</a></p>
+      </div>
+      <div class="panel">
+        <label class="post-label" for="share-post">Post</label>
+        <textarea id="share-post" rows="6" data-page="${e(page)}" data-title="${e(app.name)}">${e(post)}</textarea>
+        <div class="share-nets">
+          <button class="btn sm dark" type="button" data-copy-post>Copy post</button>
+          <button class="btn sm" type="button" data-native-share hidden>Share…</button>
+          ${nets.map(([k, n, href]) => `<a class="btn sm" data-net="${k}" href="${e(href)}" target="_blank" rel="noopener">${n}</a>`).join('')}
+        </div>
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">Mastodon, Threads, Discord or anywhere else: Copy post and paste.</p>
+      </div>
+    </div>
+  </section>`;
+}
+
 export function adSlot(placement) {
   const src = `https://crawlproof.com/api/ads/frame?slot=${encodeURIComponent(config.crawlproof.slot)}&format=text_link`;
   return `<div class="cp-ad cp-ad-${e(placement)}"><iframe src="${e(src)}" title="Sponsored" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" scrolling="no"></iframe></div>`;
@@ -328,6 +397,8 @@ export function appPage({ app, publisher, reviews, related, stats }) {
         <div class="surface"><span class="glyph">${SURFACE_ICONS.bot}</span><div><b>Agents</b> · ask any MCP client to “install ${e(app.name)} from pwamart”</div></div>
       </div>
 
+      ${shareBuilder(app)}
+
       <h2 style="margin:36px 0 4px">Ratings &amp; reviews</h2>
       ${reviews.length ? reviews.map((r) => `<div class="review"><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span> <b>${e(r.author)}</b><div class="prose">${e(r.body)}</div></div>`).join('') : '<p class="muted">No reviews yet.</p>'}
       <form id="review" class="panel" style="margin-top:16px;display:grid;gap:10px" data-slug="${e(app.slug)}">
@@ -457,8 +528,10 @@ export function developersPage({ stats }) {
     <p>Then <code>pwamart verify your-app</code> and <code>pwamart publish your-app</code>.</p>
   </section>
   <section class="block" id="badge"><h2>3 · Link to your listing</h2>
-    <div class="term"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badge.svg" alt="Get it on pwamart" height="48"&gt;&lt;/a&gt;</div></div>
-    <p><img src="/badge.svg" alt="Get it on pwamart" height="48"></p>
+    <p>The same size as the App Store and Google Play buttons (135 × 40), in dark and light, as SVG or PNG at 1x/2x/3x. Every app page has a builder with the snippets filled in and a ready post for X, Bluesky, LinkedIn and the rest.</p>
+    <p style="display:flex;gap:12px;flex-wrap:wrap"><img src="/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"><img src="/badges/get-it-on-pwamart-light.svg" alt="Get it on pwamart" width="135" height="40"></p>
+    <div class="term"><div>[![Get it on pwamart](${e(site)}/badges/get-it-on-pwamart.svg)](${e(site)}/apps/YOUR-SLUG)</div></div>
+    <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
   </section>
   <section class="block" id="cli"><h2>CLI &amp; TUI</h2>
     <div class="term">

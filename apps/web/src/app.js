@@ -239,6 +239,19 @@ for (const f of ['icon.svg', 'favicon.svg', 'logo.svg', 'badge.svg']) app.get(`/
 for (const f of ['icon-192.png', 'icon-512.png', 'maskable-192.png', 'maskable-512.png', 'apple-touch-icon.png', 'favicon-16.png', 'favicon-32.png'])
   app.get(`/${f}`, file(f, 'image/png'));
 app.get('/favicon.ico', file('favicon.ico', 'image/x-icon'));
+// Store-button-size badges (135x40, like App Store / Google Play) and the install mark.
+app.get('/badges/:name{[a-z0-9-]+(@[23]x)?\\.(svg|png)}', (c) => {
+  const name = c.req.param('name');
+  try {
+    return c.body(pub(`badges/${name}`), 200, {
+      'content-type': name.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+      'cache-control': 'public, max-age=86400',
+      'access-control-allow-origin': '*',
+    });
+  } catch {
+    return c.text('no such badge', 404);
+  }
+});
 app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript' }));
 app.get('/.well-known/pwamart.txt', (c) => c.text('pwamart.com lists itself.\n'));
 app.get('/robots.txt', (c) =>
