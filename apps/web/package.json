@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@profullstack/auth-system": "^0.7.1",
+    "@profullstack/notifications": "^0.1.4",
     "@profullstack/pwamart-mcp": "workspace:*",
     "@profullstack/stack": "^0.4.0",
     "@pwamart/db": "workspace:*",

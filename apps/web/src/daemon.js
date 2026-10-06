@@ -134,6 +134,26 @@ export async function runListingAds({ batch = 4, createCampaign } = {}) {
 
 addJob('listing-ads', 5 * 60_000, () => runListingAds());
 
+/* ------------------------------------------------- releases + following -- */
+
+// Re-read listings' manifests (each about daily) and record what visibly changed.
+addJob('release-detect', 30 * 60_000, async () => {
+  const { runReleaseDetect } = await import('./releases.js');
+  const r = await runReleaseDetect();
+  if (r.releases) console.log(`[daemon] release-detect ${JSON.stringify(r)}`);
+});
+// A newly published app becomes a "launched" release (its publisher's followers hear of it).
+addJob('release-launches', 10 * 60_000, async () => {
+  const { backfillLaunches } = await import('./releases.js');
+  await backfillLaunches();
+});
+// Releases -> one delivery per follower and channel -> email / browser push.
+addJob('release-notify', 60_000, async () => {
+  const { queueDeliveries, sendDeliveries } = await import('./releases.js');
+  await queueDeliveries();
+  await sendDeliveries();
+});
+
 /* ------------------------------------------------- featured + newsletter -- */
 
 // A paid feature comes off the home page when its week is up (staff picks never do).

@@ -81,6 +81,21 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
+    name: 'get_releases',
+    description: "What's new in an app: its releases (published by the developer or detected from manifest changes), newest first.",
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
+    name: 'follow',
+    description: 'Get notified when an app updates, or when a publisher ships a new app or update. Needs an API key or `pwamart login` (or pass an email for a confirmation link).',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, kind: { type: 'string', enum: ['app', 'publisher'] }, email: { type: 'string' } },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'subscribe_newsletter',
     description: 'Subscribe an email address to the pwamart newsletter. A confirmation email is sent; nothing else is until it is tapped.',
     inputSchema: { type: 'object', properties: { email: { type: 'string' } }, required: ['email'], additionalProperties: false },
@@ -138,6 +153,10 @@ export async function callTool(name, args, call, siteUrl) {
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/publish`, json('POST')));
     case 'feature_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/feature`, json('POST')));
+    case 'get_releases':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/releases`));
+    case 'follow':
+      return text(await call('/follow', json('POST', { kind: args.kind ?? 'app', slug: args.slug, email: args.email })));
     case 'subscribe_newsletter':
       return text(await call('/newsletter/subscribe', json('POST', { email: args.email, source: 'mcp' })));
     default:

@@ -35,6 +35,11 @@ Publish
   pwamart apps                           your apps and their status
   pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
+  pwamart releases <slug>                what's new in an app
+  pwamart release <slug> --title T [--version V] [--notes N]   post a release (followers are notified)
+  pwamart follow <slug> [--publisher] [--email E]              get notified of updates (or a publisher's new apps)
+  pwamart following                      what you follow
+  pwamart unfollow <slug> [--publisher]
 
   pwamart upgrade | update               install the latest pwamart
   pwamart uninstall | remove             remove pwamart itself (with no <slug>)
@@ -265,6 +270,38 @@ export async function main(argv = process.argv.slice(2)) {
           .join('\n'),
       );
       if (!flags.json && !flags['no-open']) await openUrl(r.checkout_url).catch(() => {});
+      return 0;
+    }
+    case 'releases': {
+      if (!rest[0]) throw new Error('usage: pwamart releases <slug>');
+      const r = await api.releases(auth, rest[0]);
+      out(r, r.releases.map((x) => `${x.created_at.slice(0, 10)}  ${x.kind.padEnd(9)} ${x.version ? `${x.version}  ` : ''}${x.title}${x.notes ? `\n            ${x.notes.split('\n')[0]}` : ''}`).join('\n') || 'No releases yet.');
+      return 0;
+    }
+    case 'release': {
+      if (!rest[0] || typeof flags.title !== 'string') throw new Error('usage: pwamart release <slug> --title "What changed" [--version 1.2] [--notes "…"]');
+      const r = await api.postRelease(auth, rest[0], { title: flags.title, version: flags.version, notes: flags.notes });
+      out(r, `✓ released ${r.release.version ?? ''} "${r.release.title}"; followers will be notified`);
+      return 0;
+    }
+    case 'follow': {
+      if (!rest[0]) throw new Error('usage: pwamart follow <slug> [--publisher] [--email you@example.com]');
+      const r = await api.follow(auth, { kind: flags.publisher ? 'publisher' : 'app', slug: rest[0], email: flags.email });
+      out(r, r.confirmed ? `✓ following ${r.target.name}` : `Check ${flags.email} for a confirmation link.`);
+      return 0;
+    }
+    case 'following': {
+      const r = await api.follows(auth);
+      out(r, r.follows.map((f) => `${f.target_kind.padEnd(10)} ${f.slug.padEnd(28)} ${f.name}`).join('\n') || 'Not following anything yet: pwamart follow <slug>');
+      return 0;
+    }
+    case 'unfollow': {
+      const kind = flags.publisher ? 'publisher' : 'app';
+      const r = await api.follows(auth);
+      const f = r.follows.find((x) => x.slug === rest[0] && x.target_kind === kind);
+      if (!f) throw new Error(`not following ${kind} ${rest[0]}`);
+      await api.unfollow(auth, f.id);
+      console.log(`✓ unfollowed ${f.name}`);
       return 0;
     }
     case 'subscribe': {

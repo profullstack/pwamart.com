@@ -262,3 +262,83 @@ if (share) {
     native.addEventListener('click', () => navigator.share({ title, text: post.value, url: page }).catch(() => {}));
   }
 }
+
+// "Get notified": follow an app or publisher by account, email or browser push.
+for (const box of document.querySelectorAll('[data-follow-kind]')) {
+  const kind = box.dataset.followKind;
+  const slug = box.dataset.followSlug;
+  const btn = box.querySelector('[data-follow-open]');
+  const label = box.querySelector('[data-follow-label]');
+  const form = box.querySelector('.follow-form');
+  const msg = box.querySelector('.follow-msg');
+  const pushBtn = box.querySelector('[data-follow-push]');
+  let state = { following: false, signed_in: false };
+  const setFollowing = (on) => {
+    state.following = on;
+    label.textContent = on ? 'Following' : 'Get notified';
+    btn.classList.toggle('dark', on);
+  };
+  const post = (body) =>
+    fetch('/api/v1/follow', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, slug, ...body }) }).then(async (r) => {
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? 'could not follow');
+      return j;
+    });
+  let push = null;
+  try {
+    push = await import('/assets/push-client.js');
+  } catch {}
+  const support = push?.pushSupport?.();
+  if (support?.supported) pushBtn.hidden = false;
+  let endpoint = '';
+  try {
+    endpoint = (await push?.getSubscription?.())?.endpoint ?? '';
+  } catch {}
+  fetch(`/api/v1/follow/state?kind=${kind}&slug=${encodeURIComponent(slug)}${endpoint ? `&endpoint=${encodeURIComponent(endpoint)}` : ''}`)
+    .then((r) => r.json())
+    .then((s) => {
+      state = { ...state, ...s };
+      setFollowing(Boolean(s.following));
+    })
+    .catch(() => {});
+
+  btn.addEventListener('click', async () => {
+    if (state.following && state.id && state.signed_in) {
+      await fetch(`/api/v1/follows/${state.id}`, { method: 'DELETE' });
+      return setFollowing(false);
+    }
+    if (state.signed_in) {
+      try {
+        const r = await post({});
+        state.id = r.id;
+        setFollowing(true);
+      } catch (err) {
+        msg.textContent = err.message;
+        form.hidden = false;
+      }
+      return;
+    }
+    form.hidden = !form.hidden;
+  });
+  pushBtn.addEventListener('click', async () => {
+    try {
+      const sub = await push.subscribe({ vapidKeyUrl: '/api/v1/push/vapid-public-key' });
+      await post({ push: sub.toJSON ? sub.toJSON() : sub });
+      setFollowing(true);
+      msg.textContent = 'Done: this browser will show a notification when there is something new.';
+    } catch (err) {
+      msg.textContent = push?.REASON_MESSAGES?.[err.reason] ?? err.message ?? 'Notifications are not available here.';
+    }
+  });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = new FormData(form).get('email');
+    try {
+      const r = await post({ email });
+      msg.textContent = r.confirmed ? 'You are following it.' : `Check ${email} for a confirmation link.`;
+      if (r.confirmed) setFollowing(true);
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  });
+}

@@ -12,7 +12,8 @@ import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublishe
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { advertisePage, appPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { rss } from './releases.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 
@@ -121,7 +122,8 @@ app.get('/apps/:slug', async (c) => {
     stats(),
   ]);
   const related = rel.apps.filter((x) => x.slug !== a.slug).slice(0, 6);
-  return html(c, appPage({ app: a, publisher, reviews, related, stats: s }));
+  const releases = await db()`select * from app_releases where app_id = ${row.id} order by created_at desc limit 3`;
+  return html(c, appPage({ app: a, publisher, reviews, related, releases, stats: s }));
 });
 
 // iOS one-tap install: one app, or a bundle (?apps=a,b,c).
@@ -375,6 +377,103 @@ app.get('/.well-known/pwamart.txt', (c) => c.text('pwamart.com lists itself.\n')
 app.get('/robots.txt', (c) =>
   c.text(`User-agent: *\nAllow: /\nDisallow: /console\nDisallow: /api/\nSitemap: ${config.siteUrl}/sitemap.xml\n`),
 );
+/* ----------------------------------------------- feeds, releases, follows -- */
+
+const xmlHeaders = { 'content-type': 'application/rss+xml; charset=utf-8', 'cache-control': 'public, max-age=600' };
+
+// New apps on the store, newest first.
+app.get('/feed.xml', async (c) => {
+  const list = configured() ? await listApps({ sort: 'new', limit: 50 }) : { apps: [] };
+  return c.body(
+    rss({
+      title: 'pwamart: new web apps',
+      link: `${config.siteUrl}/apps?sort=new`,
+      self: `${config.siteUrl}/feed.xml`,
+      description: 'New installable web apps (PWAs) on pwamart.',
+      items: list.apps.map((a) => ({ title: `${a.name} by ${a.publisher.name}`, link: `${config.siteUrl}/apps/${a.slug}`, guid: `app:${a.slug}`, date: a.published_at ?? a.updated_at, category: a.category_name, description: a.summary ?? '' })),
+    }),
+    200,
+    xmlHeaders,
+  );
+});
+
+const releaseItems = (rows) =>
+  rows.map((r) => ({
+    title: r.kind === 'launched' ? `${r.name} is now on pwamart` : `${r.name}: ${r.title}${r.version ? ` (${r.version})` : ''}`,
+    link: `${config.siteUrl}/apps/${r.slug}/releases#${r.id}`,
+    guid: `release:${r.id}`,
+    date: r.created_at,
+    description: r.notes ?? '',
+  }));
+
+// Every release across the store.
+app.get('/releases.xml', async (c) => {
+  const rows = configured()
+    ? await db()`select r.*, a.slug, a.name from app_releases r join apps a on a.id = r.app_id where a.status = 'published' and r.kind <> 'launched' order by r.created_at desc limit 50`
+    : [];
+  return c.body(rss({ title: 'pwamart: app updates', link: `${config.siteUrl}/releases`, self: `${config.siteUrl}/releases.xml`, description: 'What changed in the web apps on pwamart.', items: releaseItems(rows) }), 200, xmlHeaders);
+});
+
+app.get('/apps/:slug/releases.xml', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.text('no such app', 404);
+  const rows = await db()`select r.*, ${row.slug} as slug, ${row.name} as name from app_releases r where r.app_id = ${row.id} order by r.created_at desc limit 50`;
+  return c.body(rss({ title: `${row.name} on pwamart: releases`, link: `${config.siteUrl}/apps/${row.slug}/releases`, self: `${config.siteUrl}/apps/${row.slug}/releases.xml`, description: `What's new in ${row.name}.`, items: releaseItems(rows) }), 200, xmlHeaders);
+});
+
+// A publisher's new apps and releases together.
+app.get('/publishers/:slug/feed.xml', async (c) => {
+  const p = await getPublisher(c.req.param('slug'));
+  if (!p) return c.text('no such publisher', 404);
+  const rows = await db()`
+    select r.*, a.slug, a.name from app_releases r join apps a on a.id = r.app_id join publishers pub on pub.id = a.publisher_id
+    where pub.slug = ${p.slug} and a.status = 'published' order by r.created_at desc limit 50`;
+  return c.body(rss({ title: `${p.name} on pwamart`, link: `${config.siteUrl}/publishers/${p.slug}`, self: `${config.siteUrl}/publishers/${p.slug}/feed.xml`, description: `New apps and updates from ${p.name}.`, items: releaseItems(rows) }), 200, xmlHeaders);
+});
+
+app.get('/apps/:slug/releases', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.html(notFoundPage({ stats: await stats() }), 404);
+  const rows = await db()`select * from app_releases where app_id = ${row.id} order by created_at desc limit 100`;
+  return html(c, releasesPage({ app: shape(row), releases: rows, stats: await stats() }));
+});
+
+const notice = (c, title, body, status = 200) =>
+  c.html(layout({ title, noindex: true, body: `<div class="wrap"><section class="block" style="padding:70px 0;max-width:620px"><div class="eyebrow">pwamart</div><h1 style="margin:10px 0 14px;font-size:40px">${title}</h1><p class="lede">${body}</p><a class="btn" href="/">Back to the store</a></section></div>` }), status);
+
+app.get('/follow/confirm', async (c) => {
+  const [f] = await db()`update follows set confirmed_at = coalesce(confirmed_at, now()) where token = ${c.req.query('t') ?? ''} returning target_kind`;
+  return f ? notice(c, 'You are following it now.', 'We will email you when there is something new. Every email has a one-click unsubscribe.') : notice(c, 'That link is not valid.', 'It may have been used to unsubscribe already.', 404);
+});
+app.get('/follow/unsubscribe', async (c) => {
+  const [f] = await db()`delete from follows where token = ${c.req.query('t') ?? ''} returning id`;
+  return f ? notice(c, 'Unsubscribed.', 'You will not hear about it again. You can follow it again from its page any time.') : notice(c, 'Already unsubscribed.', 'Nothing more will be sent for that link.');
+});
+
+// The push handlers for the service worker (classic build of @profullstack/notifications).
+const PUSH_SW = [join(here, '..', 'node_modules'), join(root, 'node_modules')]
+  .map((d) => join(d, '@profullstack/notifications/src/sw-classic.js'))
+  .map((p) => {
+    try {
+      return readFileSync(p);
+    } catch {
+      return null;
+    }
+  })
+  .find(Boolean);
+const PUSH_CLIENT = [join(here, '..', 'node_modules'), join(root, 'node_modules')]
+  .map((d) => join(d, '@profullstack/notifications/src/client.js'))
+  .map((p) => {
+    try {
+      return readFileSync(p);
+    } catch {
+      return null;
+    }
+  })
+  .find(Boolean);
+app.get('/assets/push-client.js', (c) => (PUSH_CLIENT ? c.body(PUSH_CLIENT, 200, { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=86400' }) : c.text('missing', 404)));
+app.get('/assets/push-sw.js', (c) => (PUSH_SW ? c.body(PUSH_SW, 200, { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=86400' }) : c.text('missing', 404)));
+
 app.get('/sitemap.xml', async (c) => {
   const rows = configured() ? await db()`select slug, updated_at from apps where status = 'published' order by updated_at desc limit 5000` : [];
   const pubs = configured() ? await db()`select distinct p.slug from publishers p join apps a on a.publisher_id = p.id where a.status = 'published'` : [];
