@@ -1,0 +1,15 @@
+{
+  "name": "pwamart.com",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The app store for Progressive Web Apps: list, find and install PWAs on any device, no app store review, no 30%.",
+  "workspaces": ["apps/web", "packages/*"],
+  "scripts": {
+    "dev": "bun run --hot apps/web/src/main.js",
+    "start": "bun apps/web/src/main.js",
+    "test": "bun test"
+  },
+  "engines": { "bun": ">=1.3.0" },
+  "packageManager": "bun@1.4.2"
+}

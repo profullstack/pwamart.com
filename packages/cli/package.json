@@ -1,0 +1,16 @@
+{
+  "name": "@profullstack/pwamart",
+  "version": "0.1.0",
+  "description": "pwamart from the terminal: search the web-app store, install PWAs as app windows, publish your own, and browse it all in an hqtui TUI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Profullstack, Inc.",
+  "homepage": "https://pwamart.com/developers#cli",
+  "repository": { "type": "git", "url": "https://github.com/profullstack/pwamart.com", "directory": "packages/cli" },
+  "engines": { "node": ">=20" },
+  "bin": { "pwamart": "./bin/pwamart.mjs" },
+  "exports": { ".": "./src/cli.js", "./client": "./src/client.js", "./install": "./src/install.js", "./tui": "./src/tui.js" },
+  "files": ["bin", "src", "README.md"],
+  "dependencies": { "@profullstack/hqtui": "^0.8.0" },
+  "keywords": ["pwa", "app-store", "progressive-web-app", "cli", "tui", "hqtui", "installer"]
+}

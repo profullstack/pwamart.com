@@ -1,0 +1,16 @@
+{
+  "name": "@profullstack/pwamart-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for pwamart.com: search the web-app store, get install steps for any platform, and submit and publish your PWAs from any MCP client.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Profullstack, Inc.",
+  "homepage": "https://pwamart.com/developers#mcp",
+  "repository": { "type": "git", "url": "https://github.com/profullstack/pwamart.com", "directory": "packages/mcp" },
+  "engines": { "node": ">=20" },
+  "bin": { "pwamart-mcp": "./bin/pwamart-mcp.mjs" },
+  "exports": { ".": "./src/server.js", "./core": "./src/core.js" },
+  "files": ["bin", "src", "README.md"],
+  "dependencies": { "@profullstack/pwamart": "^0.1.0" },
+  "keywords": ["mcp", "pwa", "app-store", "progressive-web-app", "agents"]
+}

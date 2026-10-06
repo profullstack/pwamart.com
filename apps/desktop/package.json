@@ -1,0 +1,30 @@
+{
+  "name": "pwamart-desktop",
+  "productName": "pwamart",
+  "version": "0.1.0",
+  "description": "pwamart Desktop: browse the web-app store and install any PWA as its own window, on macOS, Windows and Linux.",
+  "main": "src/main.cjs",
+  "license": "MIT",
+  "author": "Profullstack, Inc. <hello@profullstack.com>",
+  "homepage": "https://pwamart.com",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.pwamart.desktop",
+    "productName": "pwamart",
+    "files": ["src/**", "build/icon.png"],
+    "extraResources": [{ "from": "../../packages/cli", "to": "cli", "filter": ["bin/**", "src/**", "package.json"] }],
+    "protocols": [{ "name": "pwamart", "schemes": ["pwamart"] }],
+    "linux": { "target": ["AppImage", "deb"], "category": "Network", "icon": "build/icon.png" },
+    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.utilities", "icon": "build/icon.png" },
+    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "artifactName": "pwamart-${version}-${os}-${arch}.${ext}"
+  }
+}

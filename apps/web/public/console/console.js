@@ -1,0 +1,520 @@
+/**
+ * pwamart console: publishers, apps, orgs, billing and keys. Plain ES module, no
+ * build step. Talks only to /api/v1 with the session cookie.
+ */
+
+const $ = (s, el = document) => el.querySelector(s);
+const view = $('#view');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const CATEGORIES = [
+  ['productivity', 'Productivity'], ['developer-tools', 'Developer tools'], ['ai', 'AI & agents'], ['communication', 'Communication'],
+  ['social', 'Social'], ['media', 'Music & video'], ['news', 'News & reading'], ['finance', 'Finance & crypto'], ['business', 'Business'],
+  ['education', 'Education'], ['health', 'Health & fitness'], ['lifestyle', 'Lifestyle'], ['shopping', 'Shopping'],
+  ['travel', 'Travel & maps'], ['games', 'Games'], ['utilities', 'Utilities'], ['security', 'Security & privacy'], ['design', 'Design & photo'],
+];
+
+class ApiError extends Error {
+  constructor(status, body) {
+    super(body?.error ?? `HTTP ${status}`);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`/api/v1${path}`, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data;
+}
+
+let me = null;
+
+function go(path) {
+  history.pushState({}, '', path);
+  route();
+}
+document.addEventListener('click', (ev) => {
+  const a = ev.target.closest('a[href^="/console"], a[href="/signin"]');
+  if (!a || ev.metaKey || ev.ctrlKey || a.target) return;
+  ev.preventDefault();
+  go(a.getAttribute('href'));
+});
+addEventListener('popstate', route);
+
+function nav() {
+  $('#nav').innerHTML = me
+    ? `<a href="/apps">Store</a><a href="/developers">Docs</a><a class="keep" href="#" id="signout">Sign out</a>`
+    : `<a href="/apps">Store</a><a class="cta" href="/signin">Sign in</a>`;
+  $('#signout')?.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    await api('/auth/signout', { method: 'POST' });
+    me = null;
+    go('/signin');
+  });
+  const p = location.pathname;
+  const link = (href, text, extra = '') =>
+    `<a href="${href}" class="${p === href || (href !== '/console' && p.startsWith(href)) ? 'on' : ''}">${text}${extra}</a>`;
+  $('#side').innerHTML = me
+    ? [
+        link('/console', 'Overview'),
+        link('/console/submit', 'Submit an app'),
+        link('/console/apps', 'Apps', `<small>${me.usage.apps}</small>`),
+        link('/console/publishers', 'Publishers', `<small>${me.usage.publishers}</small>`),
+        link('/console/orgs', 'Orgs & teams'),
+        '<div class="sep"></div>',
+        link('/console/billing', 'Plan & billing', `<small>${esc(me.plan.name)}</small>`),
+        link('/console/keys', 'API keys & passkeys'),
+      ].join('')
+    : '';
+}
+
+function errBox(err) {
+  return `<p class="err">${esc(err.message)}${err.body?.upgrade ? ` <a href="/console/billing">Upgrade →</a>` : ''}</p>`;
+}
+
+async function route() {
+  const p = location.pathname;
+  try {
+    if (!me) me = await api('/me').catch((e) => (e.status === 401 ? null : Promise.reject(e)));
+  } catch (err) {
+    view.innerHTML = errBox(err);
+    return;
+  }
+  if (!me && p !== '/signin') return go(`/signin?next=${encodeURIComponent(p + location.search)}`);
+  if (me && p === '/signin') return go(new URLSearchParams(location.search).get('next') || '/console');
+  nav();
+  window.scrollTo(0, 0);
+  try {
+    if (p === '/signin') return signin();
+    if (p === '/console') return overview();
+    if (p === '/console/submit') return submit();
+    if (p === '/console/apps') return appsList();
+    if (p.startsWith('/console/apps/')) return appDetail(decodeURIComponent(p.split('/')[3]));
+    if (p === '/console/publishers') return publishers();
+    if (p === '/console/orgs') return orgsPage();
+    if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
+    if (p === '/console/billing') return billing();
+    if (p === '/console/keys') return keys();
+    view.innerHTML = '<p>Not found. <a href="/console">Back to the console</a></p>';
+  } catch (err) {
+    view.innerHTML = errBox(err);
+  }
+}
+async function refreshMe() {
+  me = await api('/me');
+  nav();
+}
+
+/* -------------------------------------------------------------- sign in -- */
+
+function signin() {
+  const q = new URLSearchParams(location.search);
+  view.innerHTML = `<div class="signin">
+    <div class="eyebrow">Publisher console</div>
+    <h1>Sign in to pwamart</h1>
+    <p class="muted">No passwords. We email you a link, or use a passkey you saved before.</p>
+    ${q.get('error') === 'expired' ? '<p class="err">That link expired or was already used. Send a new one.</p>' : ''}
+    <form class="stack" id="f">
+      <label class="f">Email<input type="email" name="email" required autocomplete="email webauthn" placeholder="you@company.com"></label>
+      <button class="btn primary">Email me a sign-in link</button>
+    </form>
+    <div class="or">or</div>
+    <button class="btn" id="pk" style="width:100%">Sign in with a passkey</button>
+    <p id="msg"></p>
+  </div>`;
+  $('#f').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = new FormData(ev.target).get('email');
+    try {
+      await api('/auth/link', { method: 'POST', body: { email } });
+      $('#msg').innerHTML = `<span class="ok-msg">Check ${esc(email)} for a link. It works once and lasts 20 minutes.</span>`;
+    } catch (err) {
+      $('#msg').innerHTML = errBox(err);
+    }
+  });
+  $('#pk').addEventListener('click', async () => {
+    try {
+      if (!window.SimpleWebAuthnBrowser) throw new Error('Passkeys are not available in this browser');
+      const { options, challengeId } = await api('/auth/passkey/login/options', { method: 'POST' });
+      const response = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
+      await api('/auth/passkey/login/verify', { method: 'POST', body: { response, challengeId } });
+      me = null;
+      go(q.get('next') || '/console');
+    } catch (err) {
+      $('#msg').innerHTML = errBox(err);
+    }
+  });
+}
+
+/* ------------------------------------------------------------- overview -- */
+
+const meter = (used, limit) =>
+  limit === null ? '<span class="muted" style="font-size:13px">unlimited</span>' : `<div class="meter"><i style="width:${Math.min(100, (used / limit) * 100)}%"></i></div>`;
+
+async function overview() {
+  const { apps } = await api('/me/apps');
+  const pl = me.plan;
+  view.innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">${esc(me.user.email)}</div><h1>Overview</h1></div>
+      <a class="btn primary" href="/console/submit">Submit an app</a></div>
+    <div class="kpis">
+      <div class="kpi"><span>Plan</span><b>${esc(pl.name)}</b>${pl.paid_through ? `<small class="muted">through ${esc(pl.paid_through.slice(0, 10))}</small>` : '<a href="/console/billing" style="font-size:13px">Upgrade →</a>'}</div>
+      <div class="kpi"><span>Publishers</span><b>${me.usage.publishers}${pl.publishers !== null ? ` / ${pl.publishers}` : ''}</b>${meter(me.usage.publishers, pl.publishers)}</div>
+      <div class="kpi"><span>Apps</span><b>${me.usage.apps}${pl.apps !== null ? ` / ${pl.apps}` : ''}</b>${meter(me.usage.apps, pl.apps)}</div>
+      <div class="kpi"><span>Installs</span><b>${apps.reduce((n, a) => n + a.installs, 0)}</b><small class="muted">across your apps</small></div>
+    </div>
+    ${
+      me.publishers.length
+        ? ''
+        : `<div class="panel" style="margin-bottom:22px"><h3>Start with a publisher</h3><p class="muted">A publisher is the name your apps are listed “by”. Your first one is free.</p><a class="btn dark sm" href="/console/publishers">Create a publisher</a></div>`
+    }
+    <h2 style="margin-bottom:12px">Your apps</h2>
+    ${appsTable(apps)}`;
+}
+
+function appsTable(apps) {
+  if (!apps.length) return '<div class="empty">No apps yet. <a href="/console/submit">Submit your first PWA</a>.</div>';
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>App</th><th>Publisher</th><th>Status</th><th>Score</th><th>Installs</th></tr></thead><tbody>
+    ${apps
+      .map(
+        (a) => `<tr>
+        <td><a href="/console/apps/${esc(a.slug)}" style="text-decoration:none;font-weight:600">${a.icon ? `<img class="icon" src="${esc(a.icon)}" alt="" referrerpolicy="no-referrer">` : ''}${esc(a.name)}</a></td>
+        <td>${esc(a.publisher.name)}</td>
+        <td><span class="pill ${esc(a.status)}">${esc(a.status)}</span> ${a.verified ? '' : '<span class="pill">unverified</span>'}</td>
+        <td>${a.score ?? '–'}%</td>
+        <td>${a.installs}</td></tr>`,
+      )
+      .join('')}
+  </tbody></table></div>`;
+}
+
+async function appsList() {
+  const { apps } = await api('/me/apps');
+  view.innerHTML = `<div class="page-head"><h1>Apps</h1><a class="btn primary" href="/console/submit">Submit an app</a></div>${appsTable(apps)}`;
+}
+
+/* --------------------------------------------------------------- submit -- */
+
+function checksList(checks) {
+  return `<ul class="checks">${checks
+    .map((c) => `<li><span class="${c.ok ? 'ok' : c.level === 'required' ? 'no' : 'rec'}">${c.ok ? '✓' : c.level === 'required' ? '✕' : '○'}</span><span>${esc(c.label)}${c.ok ? '' : `<br><small class="muted">${esc(c.hint)}</small>`}</span></li>`)
+    .join('')}</ul>`;
+}
+
+async function submit() {
+  if (!me.publishers.length) {
+    view.innerHTML = `<div class="page-head"><h1>Submit an app</h1></div>
+      <div class="panel"><h3>First, a publisher</h3><p class="muted">Apps are listed under a publisher: your name, studio or company.</p>
+      ${publisherForm()}</div>`;
+    bindPublisherForm(() => go('/console/submit'));
+    return;
+  }
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Step 1 of 3</div><h1>Submit an app</h1></div></div>
+    <form class="stack" id="f">
+      <label class="f">App URL <small>The page that links your web app manifest, usually your home page.</small>
+        <input name="url" type="url" required placeholder="https://your.app" inputmode="url"></label>
+      <label class="f">Publisher<select name="publisher">${me.publishers.map((p) => `<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('')}</select></label>
+      <label class="f">Category<select name="category"><option value="">Guess from the manifest</option>${CATEGORIES.map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></label>
+      <div class="row"><button class="btn" type="button" id="check">Check installability</button><button class="btn primary">Create listing</button></div>
+      <div id="out"></div>
+    </form>`;
+  const f = $('#f');
+  $('#check').addEventListener('click', async () => {
+    const url = new FormData(f).get('url');
+    if (!url) return f.reportValidity();
+    $('#out').innerHTML = '<p class="muted">Fetching your page and manifest…</p>';
+    try {
+      const r = await api('/inspect', { method: 'POST', body: { url } });
+      $('#out').innerHTML = `<div class="panel"><div class="row" style="justify-content:space-between">
+        <div class="row">${r.app.icon ? `<img class="icon" src="${esc(r.app.icon)}" width="48" height="48" alt="" referrerpolicy="no-referrer">` : ''}<div><b>${esc(r.app.name)}</b><br><small class="muted">${esc(r.origin)}</small></div></div>
+        <span class="pill ${r.installable ? 'published' : 'unlisted'}">${r.installable ? 'installable' : 'not yet installable'} · ${r.score}%</span></div>
+        <div style="margin-top:14px">${checksList(r.checks)}</div></div>`;
+    } catch (err) {
+      $('#out').innerHTML = errBox(err);
+    }
+  });
+  f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f));
+    $('#out').innerHTML = '<p class="muted">Inspecting and creating the listing…</p>';
+    try {
+      const r = await api('/apps', { method: 'POST', body: { url: d.url, publisher: d.publisher, category: d.category || undefined } });
+      await refreshMe();
+      go(`/console/apps/${r.app.slug}`);
+    } catch (err) {
+      $('#out').innerHTML = errBox(err);
+    }
+  });
+}
+
+/* ------------------------------------------------------------ app detail -- */
+
+async function appDetail(slug) {
+  const { app, verify } = await api(`/apps/${encodeURIComponent(slug)}/manage`);
+  const step = !app.verified ? 2 : app.status !== 'published' ? 3 : null;
+  view.innerHTML = `
+    <div class="page-head"><div class="row">${app.icon ? `<img class="icon" src="${esc(app.icon)}" width="64" height="64" alt="" referrerpolicy="no-referrer">` : ''}
+      <div>${step ? `<div class="eyebrow">Step ${step} of 3</div>` : `<div class="eyebrow">Live</div>`}<h1>${esc(app.name)}</h1></div></div>
+      <div class="row"><span class="pill ${esc(app.status)}">${esc(app.status)}</span>
+      ${app.status !== 'draft' ? `<a class="btn sm" href="/apps/${esc(app.slug)}" target="_blank">View listing ↗</a>` : ''}</div></div>
+
+    ${
+      !app.verified
+        ? `<div class="panel" style="margin-bottom:18px"><h3>Prove you own ${esc(app.origin)}</h3><p class="muted">Do any one of these, then press Verify.</p>
+        ${verify.options.map((o) => `<p style="margin:10px 0 4px"><b>${esc(o.method)}</b></p><div class="code-block">${esc(o.how)}</div>`).join('')}
+        <div class="row" style="margin-top:14px"><button class="btn dark" id="verify">Verify</button><span id="vmsg"></span></div></div>`
+        : ''
+    }
+
+    <div class="panel" style="margin-bottom:18px">
+      <div class="row" style="justify-content:space-between"><h3>Installability · ${app.score ?? '–'}%</h3><button class="btn sm" id="refresh">Re-check manifest</button></div>
+      ${checksList(app.checks)}
+    </div>
+
+    <div class="row" style="margin-bottom:22px">
+      ${app.status !== 'published' ? `<button class="btn primary" id="publish" ${app.verified && app.installable !== false ? '' : 'disabled'}>Publish to the store</button>` : '<button class="btn" id="unlist">Unlist</button><button class="btn" id="unpublish">Back to draft</button>'}
+      ${me.user.admin ? `<button class="btn" id="feature">${app.featured ? 'Unfeature' : 'Feature'} (staff)</button>${app.verified ? '' : '<button class="btn" id="staffverify">Verify (staff)</button>'}` : ''}
+      <span id="pmsg"></span>
+    </div>
+
+    <h2 style="margin-bottom:12px">Listing</h2>
+    <form class="stack" id="edit">
+      <label class="f">Name<input name="name" value="${esc(app.name)}" maxlength="80"></label>
+      <label class="f">Summary <small>One line on cards, 140 characters.</small><input name="summary" value="${esc(app.summary ?? '')}" maxlength="140"></label>
+      <label class="f">Description<textarea name="description" maxlength="8000">${esc(app.description ?? '')}</textarea></label>
+      <label class="f">Category<select name="category">${CATEGORIES.map(([k, n]) => `<option value="${k}" ${k === app.category ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <label class="f">Tags <small>Comma separated, up to 10.</small><input name="tags" value="${esc(app.tags.join(', '))}"></label>
+      <div class="row"><button class="btn dark">Save</button><span id="emsg"></span></div>
+    </form>
+    <div class="panel" style="margin-top:28px"><h3>Share it</h3>
+      <div class="code-block">&lt;a href="${esc(location.origin)}/apps/${esc(app.slug)}"&gt;&lt;img src="${esc(location.origin)}/badge.svg" alt="Get it on pwamart" height="48"&gt;&lt;/a&gt;</div>
+      <p class="muted" style="font-size:13px">Terminal: <code>npx -y @profullstack/pwamart install ${esc(app.slug)}</code> · iOS profile: <a href="/apps/${esc(app.slug)}/install.mobileconfig">/apps/${esc(app.slug)}/install.mobileconfig</a></p>
+    </div>
+    <p style="margin-top:30px"><button class="btn sm" id="remove">Remove this app</button></p>`;
+
+  const act = (id, fn) => $(id)?.addEventListener('click', fn);
+  const msg = (id, html) => ($(id).innerHTML = html);
+  act('#verify', async () => {
+    msg('#vmsg', '<span class="muted">Checking…</span>');
+    try {
+      const r = await api(`/apps/${slug}/verify`, { method: 'POST' });
+      msg('#vmsg', `<span class="ok-msg">Verified by ${esc(r.method)}.</span>`);
+      setTimeout(() => appDetail(slug), 600);
+    } catch (err) {
+      msg('#vmsg', errBox(err));
+    }
+  });
+  act('#refresh', async () => {
+    try {
+      await api(`/apps/${slug}/refresh`, { method: 'POST' });
+      appDetail(slug);
+    } catch (err) {
+      msg('#pmsg', errBox(err));
+    }
+  });
+  for (const a of ['publish', 'unlist', 'unpublish'])
+    act(`#${a}`, async () => {
+      try {
+        await api(`/apps/${slug}/${a}`, { method: 'POST' });
+        appDetail(slug);
+      } catch (err) {
+        msg('#pmsg', errBox(err));
+      }
+    });
+  act('#feature', async () => {
+    await api(`/admin/apps/${slug}`, { method: 'POST', body: { featured: !app.featured } });
+    appDetail(slug);
+  });
+  act('#staffverify', async () => {
+    await api(`/admin/apps/${slug}`, { method: 'POST', body: { verified: true } });
+    appDetail(slug);
+  });
+  act('#remove', async () => {
+    if (!confirm(`Remove ${app.name} from pwamart? The slug stays reserved.`)) return;
+    await api(`/apps/${slug}`, { method: 'DELETE' });
+    await refreshMe();
+    go('/console/apps');
+  });
+  $('#edit').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(ev.target));
+    try {
+      await api(`/apps/${slug}`, { method: 'PATCH', body: { ...d, tags: d.tags.split(',').map((t) => t.trim()).filter(Boolean) } });
+      msg('#emsg', '<span class="ok-msg">Saved.</span>');
+    } catch (err) {
+      msg('#emsg', errBox(err));
+    }
+  });
+}
+
+/* ----------------------------------------------------------- publishers -- */
+
+function publisherForm(orgs = []) {
+  const shared = orgs.filter((o) => !o.personal && ['owner', 'admin'].includes(o.role));
+  return `<form class="stack" id="pf">
+    <label class="f">Name<input name="name" required maxlength="80" placeholder="Acme Apps"></label>
+    <label class="f">Slug <small>pwamart.com/publishers/<b>slug</b>. Leave blank to derive it.</small><input name="slug" maxlength="50" pattern="[a-z0-9-]+"></label>
+    <label class="f">Website<input name="website" type="url" placeholder="https://acme.example"></label>
+    <label class="f">About<textarea name="bio" maxlength="1000" style="min-height:80px"></textarea></label>
+    ${shared.length ? `<label class="f">Org<select name="org"><option value="">Personal</option>${shared.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select></label>` : ''}
+    <div class="row"><button class="btn dark">Create publisher</button><span id="pmsg"></span></div>
+  </form>`;
+}
+function bindPublisherForm(done) {
+  $('#pf').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(ev.target));
+    Object.keys(d).forEach((k) => d[k] === '' && delete d[k]);
+    try {
+      await api('/publishers', { method: 'POST', body: d });
+      await refreshMe();
+      done();
+    } catch (err) {
+      $('#pmsg').innerHTML = errBox(err);
+    }
+  });
+}
+
+async function publishers() {
+  const pl = me.plan;
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">${me.usage.publishers}${pl.publishers !== null ? ` of ${pl.publishers}` : ''} on ${esc(pl.name)}</div><h1>Publishers</h1></div></div>
+    ${
+      me.publishers.length
+        ? `<div class="table-wrap" style="margin-bottom:28px"><table class="table"><thead><tr><th>Publisher</th><th>Org</th><th>Apps</th><th></th></tr></thead><tbody>
+      ${me.publishers.map((p) => `<tr><td><b>${esc(p.name)}</b> ${p.verified ? '✓' : ''}<br><small class="muted">/publishers/${esc(p.slug)}</small></td><td>${esc(p.org_name)}</td><td>${p.apps}</td><td><a href="/publishers/${esc(p.slug)}" target="_blank">Public page ↗</a></td></tr>`).join('')}
+    </tbody></table></div>`
+        : ''
+    }
+    <h2 style="margin-bottom:12px">New publisher</h2>${publisherForm(me.orgs)}`;
+  bindPublisherForm(() => publishers());
+}
+
+/* ----------------------------------------------------------------- orgs -- */
+
+async function orgsPage() {
+  const teams = me.plan.teams;
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">${teams ? 'Unlimited plan' : 'Unlimited plan feature'}</div><h1>Orgs &amp; teams</h1></div></div>
+    <p class="muted" style="max-width:640px">Every account has a personal org. On Unlimited you can create shared orgs, invite people, split them into teams and group apps into projects.</p>
+    <div class="table-wrap" style="margin:18px 0 28px"><table class="table"><thead><tr><th>Org</th><th>Your role</th><th></th></tr></thead><tbody>
+      ${me.orgs.map((o) => `<tr><td><b>${esc(o.name)}</b>${o.personal ? ' <span class="pill">personal</span>' : ''}</td><td>${esc(o.role)}</td><td><a href="/console/orgs/${esc(o.slug)}">Open →</a></td></tr>`).join('')}
+    </tbody></table></div>
+    ${
+      teams
+        ? `<h2 style="margin-bottom:12px">New org</h2><form class="stack" id="of"><label class="f">Name<input name="name" required maxlength="80"></label><div class="row"><button class="btn dark">Create org</button><span id="omsg"></span></div></form>`
+        : `<div class="panel"><h3>Work with a team</h3><p class="muted">Shared orgs, invites, teams and projects come with Unlimited: $199/year, unlimited publishers and apps.</p><a class="btn primary sm" href="/console/billing?plan=unlimited">Upgrade</a></div>`
+    }`;
+  $('#of')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      const { org } = await api('/orgs', { method: 'POST', body: Object.fromEntries(new FormData(ev.target)) });
+      await refreshMe();
+      go(`/console/orgs/${org.slug}`);
+    } catch (err) {
+      $('#omsg').innerHTML = errBox(err);
+    }
+  });
+}
+
+async function orgDetail(ref) {
+  const d = await api(`/orgs/${encodeURIComponent(ref)}`);
+  const admin = ['owner', 'admin'].includes(me.orgs.find((o) => o.id === d.org.id)?.role);
+  const box = (title, list, form) => `<div class="panel"><h3>${title}</h3>${list}${admin && form ? form : ''}</div>`;
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Org</div><h1>${esc(d.org.name)}</h1></div></div>
+    <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+      ${box('Members', `<ul>${d.members.map((m) => `<li>${esc(m.email)} <small class="muted">${esc(m.role)}</small></li>`).join('')}${d.invites.map((i) => `<li>${esc(i.email)} <small class="muted">invited · ${esc(i.role)}</small></li>`).join('')}</ul>`,
+        `<form class="stack" data-f="invites"><label class="f">Invite by email<input name="email" type="email" required></label><label class="f">Role<select name="role"><option>member</option><option>admin</option></select></label><button class="btn sm dark">Send invite</button></form>`)}
+      ${box('Teams', d.teams.length ? `<ul>${d.teams.map((t) => `<li>${esc(t.name)}</li>`).join('')}</ul>` : '<p class="muted">No teams yet.</p>',
+        `<form class="stack" data-f="teams"><label class="f">New team<input name="name" required></label><button class="btn sm dark">Add team</button></form>`)}
+      ${box('Projects', d.projects.length ? `<ul>${d.projects.map((p) => `<li>${esc(p.name)} <small class="muted">${p.apps} apps</small></li>`).join('')}</ul>` : '<p class="muted">No projects yet.</p>',
+        `<form class="stack" data-f="projects"><label class="f">New project<input name="name" required></label><button class="btn sm dark">Add project</button></form>`)}
+      ${box('Publishers', d.publishers.length ? `<ul>${d.publishers.map((p) => `<li>${esc(p.name)}</li>`).join('')}</ul>` : '<p class="muted">None yet. Create one under Publishers and pick this org.</p>')}
+    </div><p id="omsg"></p>`;
+  view.querySelectorAll('form[data-f]').forEach((f) =>
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        await api(`/orgs/${encodeURIComponent(ref)}/${f.dataset.f}`, { method: 'POST', body: Object.fromEntries(new FormData(f)) });
+        orgDetail(ref);
+      } catch (err) {
+        $('#omsg').innerHTML = errBox(err);
+      }
+    }),
+  );
+}
+
+/* -------------------------------------------------------------- billing -- */
+
+async function billing() {
+  const b = await api('/billing');
+  const want = new URLSearchParams(location.search).get('plan');
+  const paid = new URLSearchParams(location.search).get('paid');
+  const card = (key, name, price, lines) => `<div class="plan ${key === want ? 'hot' : ''}">
+    <div class="eyebrow">${name}${b.plan.key === key ? ' · current' : ''}</div><div class="price">${price}</div>
+    <ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+    ${key === 'free' ? '' : `<button class="btn ${key === 'unlimited' ? 'dark' : 'primary'}" data-plan="${key}">${b.plan.key === key ? 'Add a year' : `Get ${name}`}</button>`}
+  </div>`;
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Plan & billing</div><h1>${esc(b.plan.name)}</h1></div></div>
+    ${paid ? '<p class="ok-msg">Payment received. The plan switches on when CoinPay confirms it, usually within a few minutes.</p>' : ''}
+    <p class="muted">${b.plan.paid_through ? `Paid through ${esc(b.plan.paid_through.slice(0, 10))}.` : 'You are on the free plan.'} Using ${b.usage.publishers} publisher${b.usage.publishers === 1 ? '' : 's'} and ${b.usage.apps} app${b.usage.apps === 1 ? '' : 's'}.</p>
+    <div class="plans">
+      ${card('free', 'Free', '$0', ['1 publisher', '10 apps'])}
+      ${card('pro', 'Pro', '$10<small> / year</small>', ['10 publishers', '100 apps'])}
+      ${card('unlimited', 'Unlimited', '$199<small> / year</small>', ['Unlimited publishers and apps', 'Shared orgs, teams, projects'])}
+    </div>
+    <p id="bmsg"></p>
+    ${b.payments.length ? `<h2 style="margin:10px 0 12px">Payments</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>${b.payments.map((p) => `<tr><td>${esc(p.created_at.slice(0, 10))}</td><td>$${(p.amount_cents / 100).toFixed(2)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  view.querySelectorAll('[data-plan]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      try {
+        const { checkout_url } = await api('/billing/checkout', { method: 'POST', body: { plan: btn.dataset.plan } });
+        location.assign(checkout_url);
+      } catch (err) {
+        $('#bmsg').innerHTML = errBox(err);
+      }
+    }),
+  );
+}
+
+/* ----------------------------------------------------------------- keys -- */
+
+async function keys() {
+  const { keys: list } = await api('/keys');
+  view.innerHTML = `<div class="page-head"><h1>API keys &amp; passkeys</h1></div>
+    <div class="panel" style="margin-bottom:22px"><h3>Passkeys</h3><p class="muted">${me.user.passkeys ? `You have ${me.user.passkeys} saved.` : 'Sign in with Face ID, Touch ID or a security key next time.'}</p><button class="btn sm dark" id="addpk">Add a passkey</button> <span id="kmsg"></span></div>
+    <h2 style="margin-bottom:6px">API keys</h2>
+    <p class="muted">For the CLI (<code>pwamart login</code>), the TUI, the desktop app, MCP (<code>PWAMART_API_KEY</code>) and your own scripts.</p>
+    <form class="row" id="kf" style="margin:12px 0 18px"><input class="f" name="name" placeholder="Key name, e.g. laptop" style="padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)"><button class="btn dark sm">Create key</button></form>
+    <div id="newkey"></div>
+    ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${list.map((k) => `<tr><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}…</code></td><td>${k.last_used_at ? esc(k.last_used_at.slice(0, 10)) : 'never'}</td><td><button class="btn sm" data-revoke="${esc(k.id)}">Revoke</button></td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  $('#kf').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const k = await api('/keys', { method: 'POST', body: { name: new FormData(ev.target).get('name') || 'default' } });
+    $('#newkey').innerHTML = `<div class="panel" style="margin-bottom:18px"><b>Copy it now; it is shown once.</b><div class="code-block" style="margin-top:8px">${esc(k.key)}</div><p class="muted" style="font-size:13px">pwamart login ${esc(k.key)}</p></div>`;
+  });
+  view.querySelectorAll('[data-revoke]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      await api(`/keys/${b.dataset.revoke}`, { method: 'DELETE' });
+      keys();
+    }),
+  );
+  $('#addpk').addEventListener('click', async () => {
+    try {
+      if (!window.SimpleWebAuthnBrowser) throw new Error('Passkeys are not available in this browser');
+      const { options, challengeId } = await api('/auth/passkey/register/options', { method: 'POST' });
+      const response = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
+      await api('/auth/passkey/register/verify', { method: 'POST', body: { response, challengeId } });
+      await refreshMe();
+      keys();
+    } catch (err) {
+      $('#kmsg').innerHTML = errBox(err);
+    }
+  });
+}
+
+route();

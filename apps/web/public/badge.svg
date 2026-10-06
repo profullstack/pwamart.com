@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 54" role="img" aria-label="Get it on pwamart">
+  <rect width="180" height="54" rx="10" fill="#16211d"/>
+  <rect x=".5" y=".5" width="179" height="53" rx="9.5" fill="none" stroke="#f6f4ed" stroke-opacity=".25"/>
+  <g transform="translate(10 9) scale(.5625)">
+    <rect x="16" y="16" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="16" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="34" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="34" y="16" width="14" height="14" rx="7" fill="#e2582f"/>
+    <path d="M41 19.5v7M37.5 23h7" stroke="#16211d" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <text x="56" y="22" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="10" fill="#f6f4ed" fill-opacity=".8" letter-spacing=".6">GET IT ON</text>
+  <text x="55" y="42" font-family="Georgia, 'Times New Roman', serif" font-size="22" fill="#f6f4ed">pwamart<tspan fill="#e2582f">.</tspan></text>
+</svg>
