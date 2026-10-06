@@ -386,7 +386,7 @@ export function pricingPage({ stats }) {
   <section class="block" style="padding-top:48px;text-align:center">
     <div class="eyebrow">Pricing for publishers</div>
     <h1 style="margin:10px auto 14px;max-width:820px">Installing is always free. Listing starts free too.</h1>
-    <p class="lede" style="margin:0 auto">Pay by the year in crypto or card through CoinPay. No cut of your sales, ever: your app takes its own payments.</p>
+    <p class="lede" style="margin:0 auto">Pay by the year in crypto through CoinPay. No cut of your sales, ever: your app takes its own payments.</p>
   </section>
   <div class="plans">
     <div class="plan">
@@ -410,7 +410,7 @@ export function pricingPage({ stats }) {
   </div>
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Limits</div><h3>Counted per account</h3><p>Publishers and apps across every org you created. A lapsed plan never takes a live listing down; it only stops new ones.</p></div>
-    <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL and more, or a card. One payment adds a year.</p></div>
+    <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL and more. One payment adds a year.</p></div>
     <div class="tile"><div class="k">Your app</div><h3>Keep 100%</h3><p>pwamart only lists and installs. Subscriptions inside your app are between you and your users.</p></div>
   </div></section>
 </div>`;
