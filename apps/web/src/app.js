@@ -14,6 +14,7 @@ import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
 import { advertisePage, appPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
+import { trafficGuard } from './throttle.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 
@@ -39,6 +40,9 @@ app.use('*', async (c, next) => {
       "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://crawlproof.com; connect-src 'self' https://crawlproof.com; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     );
 });
+
+// Crawl gateway + app-wide throttle (x402 pass instead of a 429): see throttle.js.
+app.use('*', trafficGuard());
 
 // CORS for the read API and MCP: agents and other sites read the catalog.
 app.use('/api/v1/*', async (c, next) => {
