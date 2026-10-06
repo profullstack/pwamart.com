@@ -5,11 +5,11 @@ import { configured, db, ping } from '@pwamart/db';
 import { Hono } from 'hono';
 import { api, coinpayWebhook } from './api.js';
 import * as auth from './auth.js';
-import { categoryCounts, getApp, getPublisher, listApps, reviewsFor, shape } from './catalog.js';
+import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { appPage, browsePage, developersPage, featuredPage, homePage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { appPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import * as newsletter from './newsletter.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -87,8 +87,23 @@ app.get('/apps', async (c) => {
   const sort = c.req.query('sort') || null;
   const offset = Math.max(0, Number(c.req.query('offset')) || 0);
   const limit = 24;
-  const [list, counts, s] = await Promise.all([listApps({ q, category, sort: sort ?? 'top', limit, offset }), categoryCounts(), stats()]);
-  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s }));
+  const publisher = c.req.query('publisher') ? await getPublisher(c.req.query('publisher')) : null;
+  const [list, counts, s] = await Promise.all([
+    listApps({ q, category, publisher: publisher?.slug, sort: sort ?? 'top', limit, offset }),
+    categoryCounts(),
+    stats(),
+  ]);
+  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher }));
+});
+
+app.get('/publishers', async (c) => {
+  const q = c.req.query('q')?.trim().slice(0, 80) || null;
+  const filter = PUBLISHER_FILTERS.includes(c.req.query('filter')) ? c.req.query('filter') : 'all';
+  const sort = PUBLISHER_SORTS.includes(c.req.query('sort')) ? c.req.query('sort') : 'apps';
+  const offset = Math.max(0, Number(c.req.query('offset')) || 0);
+  const limit = 48;
+  const [list, s] = await Promise.all([listPublishers({ q, filter, sort, limit, offset }), stats()]);
+  return html(c, publishersPage({ q, filter, sort, list, offset, limit, stats: s }));
 });
 
 app.get('/apps/:slug', async (c) => {
@@ -326,6 +341,7 @@ app.get('/sitemap.xml', async (c) => {
     u('/pricing'),
     u('/developers'),
     u('/featured'),
+    u('/publishers'),
     u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
@@ -350,7 +366,7 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - GET  /apps?q=&category=&publisher=&sort=top|new|rating|name&limit=&offset=
 - GET  /apps/:slug                         details, publisher, reviews
 - POST /apps/:slug/installs {method}       count an install
-- GET  /categories, GET /plans, GET /publishers/:slug
+- GET  /categories, GET /plans, GET /publishers?q=&filter=all|claimed|imported|verified&sort=apps|name|new, GET /publishers/:slug
 - GET  /me                                 your plan, usage, orgs and publishers
 - POST /publishers {name, slug?, org?}
 - POST /apps {publisher, url, category?, slug?}   inspect + create a draft
