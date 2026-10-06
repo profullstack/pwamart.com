@@ -133,8 +133,12 @@ function openStore(pathname = '/') {
     return { action: 'deny' };
   });
   // The store window never leaves the store: "Open in browser" and app sites go to the default browser.
+  // Sign in with CoinPay leaves for coinpayportal.com and comes back, so it may stay in
+  // the window; the install bridge still answers only the store (fromStore).
+  const SIGN_IN = ['https://coinpayportal.com'];
   storeWin.webContents.on('will-navigate', (ev, url) => {
-    if (new URL(url).origin !== new URL(STORE).origin) {
+    const origin = new URL(url).origin;
+    if (origin !== new URL(STORE).origin && !SIGN_IN.includes(origin)) {
       ev.preventDefault();
       shell.openExternal(url);
     }
