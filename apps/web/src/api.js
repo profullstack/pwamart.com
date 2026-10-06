@@ -211,7 +211,7 @@ api.get('/me', async (c) => {
     planFor(user.id),
     usageFor(user.id),
     orgs.listOrgsForUser(db(), user.id),
-    db()`select p.slug, p.name, p.verified, p.org_id, o.name as org_name,
+    db()`select p.slug, p.name, p.verified, p.verified_by, p.verified_domain, p.website, p.avatar_url, p.org_id, o.name as org_name,
                 (select count(*) from apps a where a.publisher_id = p.id and a.status <> 'removed')::int as apps
          from publishers p join org_members m on m.org_id = p.org_id join organizations o on o.id = p.org_id
          where m.user_id = ${user.id} order by p.created_at`,
@@ -363,18 +363,87 @@ api.post('/publishers', async (c) => {
   return c.json({ publisher: p }, 201);
 });
 
+const PUBLISHER_FIELDS = (sql) => sql`slug, name, website, bio, avatar_url, verified, verified_by, verified_at, verified_domain`;
+
 api.patch('/publishers/:slug', async (c) => {
   const { publisher } = await publisherFor(c, c.req.param('slug'), 'admin');
   const b = await body(c);
+  const website = httpsUrl(b.website);
+  // A proof covers one website host; pointing the publisher somewhere else drops it
+  // (a staff verification is about who they are, not a domain, so it stays).
+  const moved = website && hostOf(website) !== hostOf(publisher.website) && publisher.verified && publisher.verified_by !== 'staff';
   const [p] = await db()`
     update publishers set
       name = coalesce(${str(b.name, 80)}, name),
-      website = coalesce(${httpsUrl(b.website)}, website),
-      bio = coalesce(${str(b.bio, 1000)}, bio),
-      avatar_url = coalesce(${httpsUrl(b.avatar_url)}, avatar_url)
+      website = coalesce(${website}, website),
+      bio = ${b.bio === '' ? db()`null` : db()`coalesce(${str(b.bio, 1000)}, bio)`},
+      avatar_url = ${b.avatar_url === '' ? db()`null` : db()`coalesce(${httpsUrl(b.avatar_url)}, avatar_url)`}
+      ${moved ? db()`, verified = false, verified_by = null, verified_at = null, verified_domain = null` : db()``}
     where id = ${publisher.id}
-    returning slug, name, website, bio, avatar_url, verified`;
-  return c.json({ publisher: p });
+    returning ${PUBLISHER_FIELDS(db())}`;
+  return c.json({ publisher: p, ...(moved && { notice: 'The website changed, so its verification was reset. Verify the new domain.' }) });
+});
+
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+/** The publisher, with how to prove its website. */
+api.get('/publishers/:slug/manage', async (c) => {
+  const { publisher } = await publisherFor(c, c.req.param('slug'), 'member');
+  let token = publisher.verify_token;
+  if (!token) {
+    token = randomBytes(12).toString('hex');
+    await db()`update publishers set verify_token = ${token} where id = ${publisher.id} and verify_token is null`;
+    [{ verify_token: token }] = await db()`select verify_token from publishers where id = ${publisher.id}`;
+  }
+  const [p] = await db()`select ${PUBLISHER_FIELDS(db())} from publishers where id = ${publisher.id}`;
+  return c.json({ publisher: p, verify: publisherVerifyHelp({ ...publisher, verify_token: token }) });
+});
+
+export function publisherVerifyHelp(p) {
+  if (!p.website) return { token: p.verify_token, verified: Boolean(p.verified), options: [], note: 'Add your website first: verification proves you run it.' };
+  const origin = new URL(p.website).origin;
+  return { ...verifyHelp({ origin, verify_token: p.verify_token, verified: p.verified }), domain: hostOf(p.website) };
+}
+
+/**
+ * Prove the website. An app of this publisher already verified on the same host
+ * counts (it proved that origin with its own token); otherwise any of the four
+ * proofs, with the publisher's token.
+ */
+api.post('/publishers/:slug/verify', async (c) => {
+  const { publisher } = await publisherFor(c, c.req.param('slug'), 'admin');
+  if (!publisher.website) fail(409, 'add your website first: verification proves you run it');
+  const host = hostOf(publisher.website);
+  if (publisher.verified && (publisher.verified_by === 'staff' || publisher.verified_domain === host))
+    return c.json({ verified: true, method: 'already' });
+  const origin = new URL(publisher.website).origin;
+  const viaApp = (
+    await db()`select origin from apps where publisher_id = ${publisher.id} and verified_at is not null and verified_by <> 'staff'`
+  ).some((a) => hostOf(a.origin) === host);
+  // No token yet (the manage view mints it) means nothing to look for: never search for ''.
+  const method = viaApp ? 'app' : publisher.verify_token ? await verifyOrigin({ origin, url: publisher.website, token: publisher.verify_token }) : null;
+  if (!method)
+    return c.json({ verified: false, error: 'the token was not found yet', verify: publisherVerifyHelp(publisher) }, 409);
+  const [p] = await db()`
+    update publishers set verified = true, verified_by = ${method}, verified_at = now(), verified_domain = ${host}
+    where id = ${publisher.id} returning ${PUBLISHER_FIELDS(db())}`;
+  return c.json({ verified: true, method, publisher: p });
+});
+
+/** "Fill from website": suggested name, logo and bio. Saves nothing. */
+api.post('/publishers/:slug/autofill', async (c) => {
+  const { publisher } = await publisherFor(c, c.req.param('slug'), 'admin');
+  const b = await body(c);
+  const url = str(b.url, 500) ?? publisher.website;
+  if (!url) fail(400, 'give a website URL to read');
+  const { fetchProfile } = await import('./profile.js');
+  return c.json({ suggestion: await fetchProfile(url) });
 });
 
 api.delete('/publishers/:slug', async (c) => {
@@ -995,7 +1064,10 @@ api.post('/admin/newsletter/issues/:id/send', async (c) => {
 api.post('/admin/publishers/:slug', async (c) => {
   await requireAdmin(c);
   const { verified } = await body(c);
-  const [p] = await db()`update publishers set verified = ${Boolean(verified)} where slug = ${c.req.param('slug')} returning slug, verified`;
+  const v = Boolean(verified);
+  const [p] = await db()`
+    update publishers set verified = ${v}, verified_by = ${v ? 'staff' : null}, verified_at = ${v ? new Date() : null}, verified_domain = null
+    where slug = ${c.req.param('slug')} returning slug, verified, verified_by`;
   if (!p) fail(404, 'no such publisher');
   return c.json({ publisher: p });
 });

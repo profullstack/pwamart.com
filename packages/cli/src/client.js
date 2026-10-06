@@ -97,4 +97,9 @@ export const unfollow = (auth, id) => call(auth, `/follows/${encodeURIComponent(
 export const refresh = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/refresh`, post());
 export const manage = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/manage`);
 export const createPublisher = (auth, body) => call(auth, '/publishers', post(body));
+const pub = (slug) => `/publishers/${encodeURIComponent(slug)}`;
+export const managePublisher = (auth, slug) => call(auth, `${pub(slug)}/manage`);
+export const updatePublisher = (auth, slug, body) => call(auth, pub(slug), { method: 'PATCH', body: JSON.stringify(body) });
+export const verifyPublisher = (auth, slug) => call(auth, `${pub(slug)}/verify`, post());
+export const autofillPublisher = (auth, slug, url) => call(auth, `${pub(slug)}/autofill`, post(url ? { url } : {}));
 export const inspect = (auth, url) => call(auth, '/inspect', post({ url }));

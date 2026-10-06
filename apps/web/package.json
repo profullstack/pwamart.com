@@ -7,6 +7,7 @@
     "start": "bun src/main.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@profullstack/auth-system": "^0.7.1",
     "@profullstack/notifications": "^0.1.4",
     "@profullstack/pwamart-mcp": "workspace:*",

@@ -166,6 +166,50 @@ d('store end to end', () => {
     expect(shared.note).toContain('vercel.app');
   });
 
+  test('publisher: fill from website suggests the manifest icon and the site description', async () => {
+    const r = await call('POST', '/publishers/alice-apps/autofill', { url: `${base}/notes/` });
+    expect(r.status).toBe(200);
+    expect(r.body.suggestion).toMatchObject({
+      website: base,
+      logo: `${base}/notes/i512.png`,
+      logo_source: 'manifest',
+      bio: 'The notes app.',
+      bio_source: 'site',
+    });
+    // Nothing saved until the publisher presses Save.
+    const [p] = await db()`select avatar_url from publishers where slug = 'alice-apps'`;
+    expect(p.avatar_url).toBe(null);
+    const saved = await call('PATCH', '/publishers/alice-apps', { avatar_url: 'https://cdn.example/logo.png', bio: 'We make notes.' });
+    expect(saved.body.publisher).toMatchObject({ avatar_url: 'https://cdn.example/logo.png', bio: 'We make notes.' });
+    const page = await (await app.request('/publishers/alice-apps')).text();
+    expect(page).toContain('https://cdn.example/logo.png');
+    expect(page).toContain('/console/publishers/alice-apps');
+    expect((await call('PATCH', '/publishers/alice-apps', { avatar_url: '' })).body.publisher.avatar_url).toBe(null);
+  });
+
+  test('publisher: verify the website, by a verified app on the same host; moving the website resets it', async () => {
+    expect((await call('POST', '/publishers/alice-apps/verify')).status).toBe(409); // no website yet
+    const m = await call('GET', '/publishers/alice-apps/manage');
+    expect(m.body.verify.options).toEqual([]);
+    expect(m.body.publisher.verified).toBe(false);
+    await db()`update publishers set website = ${`${base}/`} where slug = 'alice-apps'`;
+    const help = (await call('GET', '/publishers/alice-apps/manage')).body.verify;
+    expect(help.domain).toBe('localhost');
+    expect(help.options.map((o) => o.method)).toContain('manifest');
+    // notes was verified on this origin by its /.well-known file: that proves the host.
+    const v = await call('POST', '/publishers/alice-apps/verify');
+    expect(v.body).toMatchObject({ verified: true, method: 'app', publisher: { verified_domain: 'localhost', verified_by: 'app' } });
+    const page = await (await app.request('/publishers/alice-apps')).text();
+    expect(page).toContain('proved it runs <b>localhost</b>');
+    const moved = await call('PATCH', '/publishers/alice-apps', { website: 'https://elsewhere.example/' });
+    expect(moved.body.publisher.verified).toBe(false);
+    expect(moved.body.notice).toContain('reset');
+    // An outsider cannot read or change it.
+    const bob = req((await keyFor('bob-outsider@example.test')).key);
+    expect((await bob('GET', '/publishers/alice-apps/manage')).status).toBe(404);
+    expect((await bob('POST', '/publishers/alice-apps/autofill', { url: `${base}/notes/` })).status).toBe(404);
+  });
+
   test('the public catalog lists, searches and shows published apps only', async () => {
     await call('POST', '/apps', { url: `${base}/secret/`, publisher: 'alice-apps' });
     const list = await anon('GET', '/apps');

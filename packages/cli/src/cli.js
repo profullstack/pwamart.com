@@ -28,6 +28,10 @@ Account (OAuth 2.1: opens your browser, no keys to paste)
 
 Publish
   pwamart publisher <name> [--slug S] [--website URL]
+  pwamart publisher show <slug>          profile + how to verify its website
+  pwamart publisher fill <slug> [--url U] [--save]   read the website for a logo and bio
+  pwamart publisher edit <slug> [--logo URL] [--bio T] [--website URL] [--name N]
+  pwamart publisher verify <slug>        prove the website (manifest, file, meta or DNS)
   pwamart check <url>                    grade any URL's installability
   pwamart submit <url> --publisher <slug> [--category C]
   pwamart verify <slug>
@@ -219,6 +223,41 @@ export async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     case 'publisher': {
+      const [sub, slug] = rest;
+      if (['show', 'fill', 'edit', 'verify'].includes(sub)) {
+        if (!slug) throw new Error(`usage: pwamart publisher ${sub} <slug>`);
+        if (sub === 'show') {
+          const r = await api.managePublisher(auth, slug);
+          const p = r.publisher;
+          out(r, [
+            `${p.name}  ${p.verified ? `verified${p.verified_domain ? ` (${p.verified_domain})` : ''}` : 'unverified'}`,
+            `website  ${p.website ?? '–'}`,
+            `logo     ${p.avatar_url ?? '–'}`,
+            `bio      ${p.bio ?? '–'}`,
+            ...(p.verified ? [] : ['', `Verify ${r.verify.domain ?? 'your website'} with any one of:`, ...r.verify.options.map((o) => `  ${o.method.padEnd(10)} ${o.how}`), ...(r.verify.note ? [`  ${r.verify.note}`] : []), `then: pwamart publisher verify ${slug}`]),
+          ].join('\n'));
+          return 0;
+        }
+        if (sub === 'fill') {
+          const { suggestion: s } = await api.autofillPublisher(auth, slug, flags.url);
+          if (flags.save) {
+            const body = { website: s.website, ...(s.logo && { avatar_url: s.logo }), ...(s.bio && { bio: s.bio }) };
+            const r = await api.updatePublisher(auth, slug, body);
+            out({ suggestion: s, publisher: r.publisher }, `✓ saved: logo ${s.logo ?? '–'}, bio ${s.bio ? `(${s.bio_source})` : '–'}`);
+          } else out({ suggestion: s }, [`name     ${s.name}`, `website  ${s.website}`, `logo     ${s.logo ?? '–'}${s.logo_source ? `  (${s.logo_source})` : ''}`, `bio      ${s.bio ?? '–'}${s.bio_source ? `  (${s.bio_source === 'ai' ? 'written by AI from the page' : 'from the site'})` : ''}`, '', `save it: pwamart publisher fill ${slug} --save`].join('\n'));
+          return 0;
+        }
+        if (sub === 'edit') {
+          const body = { ...(flags.logo !== undefined && { avatar_url: flags.logo }), ...(flags.bio !== undefined && { bio: flags.bio }), ...(flags.website && { website: flags.website }), ...(flags.name && { name: flags.name }) };
+          if (!Object.keys(body).length) throw new Error('usage: pwamart publisher edit <slug> [--logo URL] [--bio T] [--website URL] [--name N]');
+          const r = await api.updatePublisher(auth, slug, body);
+          out(r, `✓ ${r.publisher.slug} updated${r.notice ? `\n${r.notice}` : ''}`);
+          return 0;
+        }
+        const r = await api.verifyPublisher(auth, slug);
+        out(r, `✓ ${slug} verified (${r.method})`);
+        return 0;
+      }
       const name = rest.join(' ');
       if (!name) throw new Error('usage: pwamart publisher <name> [--slug s]');
       const r = await api.createPublisher(auth, { name, slug: flags.slug, website: flags.website, org: flags.org });

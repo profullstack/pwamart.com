@@ -1,7 +1,7 @@
 // pwamart service worker. Static assets: cache first, refreshed in the background.
 // Pages and the API: network first, so a listing is never stale; the last copy of a
 // page is the offline fallback. Bump VERSION when an asset changes shape.
-const VERSION = 'pwamart-v2';
+const VERSION = 'pwamart-v3';
 
 // Push: "Get notified" releases (handlers from @profullstack/notifications).
 importScripts('/assets/push-sw.js');
