@@ -324,3 +324,12 @@ aside .cp-ad { margin: 0; }
 .kind-publisher { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .kind-detected { color: var(--orange-ink); border-color: var(--orange); }
 .kind-launched { color: var(--green); border-color: var(--green); }
+
+/* ------------------------------------------------------- install bar -- */
+.install-bar { margin-top: 22px; max-width: 560px; }
+.install-line {
+  display: flex; align-items: center; gap: 10px; background: #0e1512; color: #e9e6da;
+  border: 1px solid #22302a; border-radius: var(--radius); padding: 8px 8px 8px 16px;
+}
+.install-line code { flex: 1; font: 13.5px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; background: none; color: inherit; padding: 0; }
+.install-more { margin: 8px 2px 0; font-size: 14px; color: var(--muted); }

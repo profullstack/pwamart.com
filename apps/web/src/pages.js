@@ -294,6 +294,15 @@ function categoryChips(counts, active, keep = {}) {
 
 /* --------------------------------------------------------------- home -- */
 
+/** The one-line install, copyable, with the sign-in / upgrade / uninstall commands under it. */
+function installBar() {
+  const cmd = `curl -fsSL ${config.siteUrl}/install.sh | sh`;
+  return `<div class="install-bar">
+        <div class="install-line"><code>${e(cmd)}</code><button class="btn sm" type="button" data-copy-text="${e(cmd)}" aria-label="Copy the install command">Copy</button></div>
+        <p class="install-more">Then <code>pwamart login</code> · <a href="/developers#cli">upgrade, uninstall, logout</a> · or <code>npm i -g @profullstack/pwamart</code></p>
+      </div>`;
+}
+
 export function homePage({ featured, top, fresh, counts, stats, features = {} }) {
   const tints = ['#e5eadb', '#f3e2d6', '#e1e6ee', '#efe6cf'];
   const body = `
@@ -307,10 +316,13 @@ export function homePage({ featured, top, fresh, counts, stats, features = {} })
         <a class="btn primary lg" href="/apps">Browse apps</a>
         <a class="btn lg" href="/console/submit">List your PWA free</a>
       </div>
+      ${installBar()}
     </div>
     <div class="term" aria-label="pwamart from a terminal">
       <div class="dots"><i></i><i></i><i></i></div>
-      <div><span class="p">$</span> npx @profullstack/pwamart search notes</div>
+      <div><span class="p">$</span> curl -fsSL ${e(config.siteUrl)}/install.sh | sh</div>
+      <div><span class="p">$</span> pwamart login <span class="p"># OAuth in your browser</span></div>
+      <div><span class="p">$</span> pwamart search notes</div>
       <div class="g">  ✓ ${e(stats.apps)} apps indexed</div>
       <div><span class="p">$</span> pwamart install <span class="o">${e(top[0]?.slug ?? 'your-app')}</span></div>
       <div class="g">  ✓ opened as an app window · desktop entry written</div>
@@ -615,7 +627,7 @@ export function developersPage({ stats }) {
   </section>
   <section class="block" id="submit"><h2>1 · Submit</h2>
     <p>In the <a href="/console/submit">console</a>, or from a terminal:</p>
-    <div class="term"><div><span class="p">$</span> npx -y @profullstack/pwamart login</div><div><span class="p">$</span> pwamart submit https://your.app --publisher you</div></div>
+    <div class="term"><div><span class="p">$</span> curl -fsSL ${e(site)}/install.sh | sh</div><div><span class="p">$</span> pwamart login</div><div><span class="p">$</span> pwamart submit https://your.app --publisher you</div></div>
     <p>Required to publish: HTTPS, a linked manifest with <code>name</code>, 192 and 512px icons, <code>display: standalone</code> and a same-origin <code>start_url</code>. A service worker, a maskable icon, screenshots and an <code>id</code> are recommended and shown on your page.</p>
   </section>
   <section class="block" id="verify"><h2>2 · Verify the domain</h2>
@@ -635,7 +647,9 @@ export function developersPage({ stats }) {
     <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
   </section>
   <section class="block" id="cli"><h2>CLI &amp; TUI</h2>
-    <div class="term">
+    <p>One line installs it with bun or npm, whichever you have; nothing asks for root:</p>
+    ${installBar()}
+    <div class="term" style="margin-top:14px">
       <div><span class="p">$</span> curl -fsSL ${e(site)}/install.sh | sh</div>
       <div><span class="p">$</span> pwamart login              <span class="p"># OAuth 2.1 in your browser; --manual over SSH</span></div>
       <div><span class="p">$</span> pwamart search "markdown editor"</div>
@@ -646,6 +660,8 @@ export function developersPage({ stats }) {
     <p>Installs use TronBrowser (<code>tron --app=…</code>) when it is present, otherwise Chrome, Chromium, Edge or Brave in app mode.</p>
     <p><code>pwamart login</code> opens your browser, you click Allow, and the CLI, the TUI and the MCP server all share that sign-in (refreshed on their own; <code>pwamart logout</code> revokes it). Scripts and CI can still use an API key: <code>PWAMART_API_KEY=pm_live_…</code>.</p>
     <div class="term">
+      <div><span class="p">$</span> pwamart whoami             <span class="p"># who the CLI, TUI and MCP are signed in as</span></div>
+      <div><span class="p">$</span> pwamart logout             <span class="p"># revokes the sign-in</span></div>
       <div><span class="p">$</span> pwamart upgrade            <span class="p"># or: curl -fsSL ${e(site)}/upgrade.sh | sh</span></div>
       <div><span class="p">$</span> pwamart uninstall          <span class="p"># or: curl -fsSL ${e(site)}/uninstall.sh | sh   (--purge also drops sign-in + launchers)</span></div>
     </div>
