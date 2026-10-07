@@ -370,3 +370,14 @@ for (const box of document.querySelectorAll('[data-follow-kind]')) {
     }
   });
 }
+
+// Copy buttons on one-liners (the curl install bar).
+for (const btn of document.querySelectorAll('[data-copy-text]')) {
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copyText);
+      btn.textContent = 'Copied';
+      setTimeout(() => (btn.textContent = 'Copy'), 1500);
+    } catch {}
+  });
+}
