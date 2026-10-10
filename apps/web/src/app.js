@@ -381,6 +381,14 @@ const withMode = (mode) => INSTALL_SH.replace(/^#!\/bin\/sh\n/, `#!/bin/sh\nPWAM
 app.get('/upgrade.sh', (c) => c.body(withMode('upgrade'), 200, { 'content-type': 'text/x-shellscript' }));
 app.get('/uninstall.sh', (c) => c.body(withMode('uninstall'), 200, { 'content-type': 'text/x-shellscript' }));
 app.get('/.well-known/pwamart.txt', (c) => c.text('pwamart.com lists itself.\n'));
+app.get('/.well-known/openwebring.json', (c) =>
+  c.json({
+    openwebring: '0.1',
+    site: { url: 'https://pwamart.com/', name: 'pwamart' },
+    made_by: 'both',
+    rings: [{ ring: 'https://rssamplifier.com/ring/profullstack', slug: 'pwamart-com' }],
+  }),
+);
 app.get('/robots.txt', (c) =>
   c.text(`User-agent: *\nAllow: /\nDisallow: /console\nDisallow: /api/\nSitemap: ${config.siteUrl}/sitemap.xml\n`),
 );
