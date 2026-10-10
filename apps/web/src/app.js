@@ -14,6 +14,7 @@ import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
 import { advertisePage, appPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
+import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
@@ -43,6 +44,13 @@ app.use('*', async (c, next) => {
 
 // Crawl gateway + app-wide throttle (x402 pass instead of a 429): see throttle.js.
 app.use('*', trafficGuard());
+
+// The shared footer's template refreshes from jsDelivr at most hourly; await it
+// here so the synchronous page templates always have a current copy.
+app.use('*', async (c, next) => {
+  if (c.req.method === 'GET') await refreshFooter();
+  await next();
+});
 
 // CORS for the read API and MCP: agents and other sites read the catalog.
 app.use('/api/v1/*', async (c, next) => {

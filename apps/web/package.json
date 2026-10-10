@@ -9,6 +9,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
     "@profullstack/auth-system": "^0.7.1",
+    "@profullstack/footer": "latest",
     "@profullstack/notifications": "^0.1.4",
     "@profullstack/pwamart-mcp": "workspace:*",
     "@profullstack/stack": "^0.4.0",
