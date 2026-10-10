@@ -11,6 +11,7 @@
       "dependencies": {
         "@anthropic-ai/sdk": "^0.131.0",
         "@profullstack/auth-system": "^0.7.1",
+        "@profullstack/footer": "latest",
         "@profullstack/notifications": "^0.1.4",
         "@profullstack/pwamart-mcp": "workspace:*",
         "@profullstack/stack": "^0.4.0",
@@ -95,6 +96,8 @@
     "@profullstack/auth-system": ["@profullstack/auth-system@0.7.1", "", { "dependencies": { "bcryptjs": "^2.4.3", "jsonwebtoken": "^9.0.2", "uuid": "^11.1.0" }, "peerDependencies": { "@supabase/supabase-js": "^2.49.4", "mongodb": "^6.5.0", "mysql2": "^3.9.2", "pg": "^8.11.3", "pocketbase": "^0.21.1" }, "optionalPeers": ["@supabase/supabase-js", "mongodb", "mysql2", "pg", "pocketbase"] }, "sha512-xtQPnhl7ZKPfQHFLWt8lRN9aiwFMnh4j9diQHQobG9U2RMmDI5nqtHHKNm80Y6P5zZl1FaIf23YjTXe/KofkFw=="],
 
     "@profullstack/emailer": ["@profullstack/emailer@1.0.3", "", {}, "sha512-VyAtCcfnSI6LOwJvWogCr3ZNmEsaZw+iuWrqnosLsdcKsbRyCrCmXigMNZJZEjlgYlR+lK//PwNPG+xtCFvWAw=="],
+
+    "@profullstack/footer": ["@profullstack/footer@0.2.1", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"], "bin": { "profullstack-footer": "bin/profullstack-footer.js" } }, "sha512-KHmKVwrlzCBrSAAJ4zobNFCxTg8VF0gvNMeAut00dX3+gbWCtk6eOwIR2AaqEC7smj6Aio6cIexzt/dUnv1McA=="],
 
     "@profullstack/form-guard": ["@profullstack/form-guard@0.1.1", "", {}, "sha512-RGLGfQhjq40f+JqEhSmsJnS0I5sFWjYdrYx4VYtkUqz8xvioN2yyR+6uFK0mnDAStKrYytlngg3meUsrChm/OQ=="],
 

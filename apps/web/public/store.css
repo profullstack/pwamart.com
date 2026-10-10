@@ -255,12 +255,11 @@ dialog.sheet::backdrop { background: rgba(10, 16, 13, 0.55); backdrop-filter: bl
 @media (prefers-color-scheme: dark) { .tile .k { color: var(--orange); } }
 
 /* -------------------------------------------------------------- footer -- */
-footer.foot { border-top: 1px solid var(--line); margin-top: 40px; padding: 30px 0 50px; font-size: 14px; color: var(--muted); }
+footer.foot { border-top: 1px solid var(--line); margin-top: 40px; padding: 30px 0; font-size: 14px; color: var(--muted); }
 footer.foot .wrap { display: flex; gap: 28px; flex-wrap: wrap; justify-content: space-between; }
 footer.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
 footer.foot a { text-decoration: none; }
 footer.foot a:hover { color: var(--ink); }
-footer.foot nav.webring { flex-basis: 100%; justify-content: center; gap: 12px; font-size: 13px; }
 
 .empty { padding: 40px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
 .pager { display: flex; gap: 10px; justify-content: center; padding: 26px 0; }
