@@ -97,6 +97,12 @@ ${
     <a href="/featured">Get featured</a><a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a>
     <a href="/llms.txt">llms.txt</a><a href="https://github.com/profullstack/pwamart.com">GitHub</a>
   </nav>
+  <nav class="webring" aria-label="Profullstack webring">
+    <a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a>
+    <a href="https://rssamplifier.com/ring/profullstack">Profullstack</a>
+    <a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a>
+    <a href="https://rssamplifier.com/ring/profullstack/random?from=https%3A%2F%2Fpwamart.com%2F" title="Random site" aria-label="Random site">&#x2684;</a>
+  </nav>
 </div></footer>
 <script src="/assets/store.js" type="module"></script>
 </body>
