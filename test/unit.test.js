@@ -4,7 +4,7 @@ import { sharedHost } from '../apps/web/src/shared-hosts.js';
 import { aiBio, pageText, pickLogo } from '../apps/web/src/profile.js';
 import { PUBLISHER_POSTS, publisherPosts } from '../apps/web/src/share-posts.js';
 import { summarizeNetwork } from '../apps/web/src/crawlproof.js';
-import { advertisePage, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
+import { advertisePage, layout, compact, e, reachTiles, safeUrl } from '../apps/web/src/pages.js';
 import { TOOLS, installInstructions } from '../packages/mcp/src/core.js';
 import { formatList, parse } from '../packages/cli/src/cli.js';
 import { appArgs, desktopEntry, findBrowser } from '../packages/cli/src/install.js';
@@ -219,5 +219,16 @@ describe('tui', () => {
     expect(text).toContain('pwamart');
     expect(text).toContain('Notes');
     expect(text).toContain('pwamart install notes');
+  });
+});
+
+describe('footer', () => {
+  test('server-renders the Profullstack webring row in the store footer', () => {
+    const html = layout({ title: 't', description: 'd', body: '' });
+    const foot = html.slice(html.indexOf('<footer class="foot">'));
+    expect(foot).toContain('class="webring"');
+    expect(foot).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F');
+    expect(foot).toContain('https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F');
+    expect(foot.match(/&copy;/g)?.length).toBe(1);
   });
 });

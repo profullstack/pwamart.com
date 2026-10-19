@@ -89,6 +89,7 @@ ${
 <main>${body}</main>
 <footer class="foot"><div class="wrap">
   <span>&copy; ${new Date().getFullYear()} Profullstack, Inc.</span>
+  <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav>
   <nav>
     <a href="/developers">Developers</a><a href="/developers#api">API</a><a href="/pricing">Pricing</a>
     <a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
