@@ -381,3 +381,27 @@ for (const btn of document.querySelectorAll('[data-copy-text]')) {
     } catch {}
   });
 }
+
+// Collections: unticking an app takes it out of the install commands and links.
+const col = document.querySelector('[data-collection]');
+if (col) {
+  const slug = col.dataset.collection;
+  const site = col.dataset.site || location.origin;
+  const boxes = [...col.querySelectorAll('[data-col-app]')];
+  const update = () => {
+    const on = boxes.filter((b) => b.checked).map((b) => b.dataset.colApp);
+    const qs = on.length === boxes.length ? '' : `?apps=${on.join(',')}`;
+    const mcp = boxes.filter((b) => b.checked && b.dataset.mcp).map((b) => b.dataset.mcp).join('\n');
+    const set = (key, text) => {
+      for (const el of col.querySelectorAll(`[data-col-out="${key}"]`)) el.textContent = text;
+      for (const el of col.querySelectorAll(`[data-col-copy="${key}"]`)) el.dataset.copyText = text;
+    };
+    set('cli', `curl -fsSL ${site}/collections/${slug}/install.sh${qs} | sh`);
+    set('mcp', mcp || '# none of the apps you picked has an MCP server');
+    for (const a of col.querySelectorAll('[data-col-href]')) {
+      const k = a.dataset.colHref;
+      a.href = k === 'ios' ? `/bundle.mobileconfig?apps=${on.join(',')}` : `/collections/${slug}/${k}${qs}`;
+    }
+  };
+  for (const b of boxes) b.addEventListener('change', update);
+}

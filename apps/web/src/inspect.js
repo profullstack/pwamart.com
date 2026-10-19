@@ -51,13 +51,15 @@ async function assertPublic(url) {
 }
 
 /** GET with every hop checked. Returns { url, status, type, text }. */
-export async function safeFetch(url, { accept = '*/*', maxBytes = MAX_BYTES, timeoutMs = TIMEOUT_MS } = {}) {
+export async function safeFetch(url, { accept = '*/*', maxBytes = MAX_BYTES, timeoutMs = TIMEOUT_MS, method = 'GET', body, headers = {} } = {}) {
   let current = url;
   for (let hop = 0; hop < 5; hop++) {
     await assertPublic(current);
     const res = await fetch(current, {
+      method,
+      body,
       redirect: 'manual',
-      headers: { 'user-agent': UA, accept },
+      headers: { 'user-agent': UA, accept, ...headers },
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {

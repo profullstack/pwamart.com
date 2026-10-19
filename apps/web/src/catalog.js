@@ -1,5 +1,6 @@
 import { db } from '@pwamart/db';
 import { CATEGORY_NAMES } from './config.js';
+import { mergeSurfaces, w3bsPage } from './surfaces.js';
 
 /**
  * Reading the store: the queries the API, the server-rendered pages and the
@@ -9,7 +10,7 @@ import { CATEGORY_NAMES } from './config.js';
 const PUBLIC_FIELDS = (sql) => sql`
   a.id, a.slug, a.name, a.summary, a.description, a.url, a.origin, a.start_url, a.manifest_id,
   a.manifest_url, a.icon_url, a.screenshots, a.theme_color, a.background_color, a.display,
-  a.category, a.tags, a.features, a.offline_reason, a.status, a.featured, a.installs, a.rating_count,
+  a.category, a.tags, a.features, a.offline_reason, a.surfaces, a.surfaces_set, a.surface_keys, a.status, a.featured, a.installs, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
   a.verified_at is not null as verified, a.check_report, a.checked_at, a.published_at, a.updated_at,
   p.slug as publisher_slug, p.name as publisher_name, p.avatar_url as publisher_avatar, p.verified as publisher_verified, p.claimable as publisher_claimable, p.claim_domain as publisher_claim_domain`;
@@ -38,6 +39,7 @@ export function shape(row) {
     features: row.features ?? [],
     offline: (row.features ?? []).includes('offline'),
     offline_reason: row.offline_reason ?? null,
+    surfaces: surfacesOf(row),
     status: row.status,
     featured: row.featured,
     installs: row.installs,
@@ -57,6 +59,24 @@ export function shape(row) {
       cli: `npx -y @profullstack/pwamart install ${row.slug}`,
     },
   };
+}
+
+/** The merged surfaces, with the w3bs page link where there is one. */
+function surfacesOf(row) {
+  const s = mergeSurfaces(row.surfaces, row.surfaces_set);
+  if (s.cli?.w3bs) s.cli = { ...s.cli, w3bs_url: w3bsPage(s.cli.w3bs), w3bs_install: `w3bs install ${s.cli.w3bs}` };
+  return s;
+}
+
+/** Published apps per surface: { pwa: 431, cli: 40, api: 22, mcp: 9 }. */
+export async function surfaceCounts() {
+  const [r] = await db()`
+    select count(*)::int as pwa,
+           count(*) filter (where surface_keys @> array['cli']::text[])::int as cli,
+           count(*) filter (where surface_keys @> array['api']::text[])::int as api,
+           count(*) filter (where surface_keys @> array['mcp']::text[])::int as mcp
+    from apps where status = 'published'`;
+  return r;
 }
 
 const SORTS = {
@@ -82,7 +102,7 @@ export async function featureCounts() {
 }
 
 /** Published apps, searchable. `q` is websearch syntax, so raw input never errors. */
-export async function listApps({ q, category, publisher, featured, feature, sort = 'top', limit = 24, offset = 0 } = {}) {
+export async function listApps({ q, category, publisher, featured, feature, surface, slugs, sort = 'top', limit = 24, offset = 0 } = {}) {
   const sql = db();
   const lim = Math.min(Math.max(Number(limit) || 24, 1), 100);
   const off = Math.max(Number(offset) || 0, 0);
@@ -98,6 +118,8 @@ export async function listApps({ q, category, publisher, featured, feature, sort
       ${publisher ? sql`and p.slug = ${publisher}` : sql``}
       ${featured ? sql`and a.featured` : sql``}
       ${feature ? sql`and a.features @> array[${String(feature)}]::text[]` : sql``}
+      ${surface && surface !== 'pwa' ? sql`and a.surface_keys @> array[${String(surface)}]::text[]` : sql``}
+      ${slugs ? sql`and a.slug = any(${slugs.map(String)}::text[])` : sql``}
       ${
         query
           ? sql`and (to_tsvector('english', coalesce(a.name, '') || ' ' || coalesce(a.summary, '') || ' ' || coalesce(a.description, ''))

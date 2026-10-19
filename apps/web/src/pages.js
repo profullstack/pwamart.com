@@ -1,6 +1,7 @@
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { siteFooter } from './footer.js';
 import { publisherPosts } from './share-posts.js';
+import { claudeMcpLines, mcpConfig } from './collections.js';
 
 /**
  * Server-rendered store pages. Plain template strings: every value from the
@@ -68,6 +69,7 @@ ${head}
   <form class="search" action="/apps" role="search">${SEARCH_ICON}<input name="q" type="search" placeholder="Search web apps" aria-label="Search web apps" autocomplete="off"></form>
   <nav class="nav">
     <a href="/apps">Browse</a>
+    <a href="/collections">Collections</a>
     <a href="/publishers">Publishers</a>
     <a href="/developers">Developers</a>
     <a href="/pricing">Pricing</a>
@@ -265,9 +267,25 @@ export function card(app) {
     <div class="by">${e(app.publisher.name)} ${app.publisher.verified ? CHECK : ''}</div>
     <div class="sum">${e(app.summary ?? '')}</div>
     <div class="meta"><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
-    ${app.offline ? OFFLINE_TAG : ''}
+    <div class="flags">${surfaceFlags(app)}${app.offline ? OFFLINE_TAG : ''}</div>
   </div>
 </a>`;
+}
+
+/** PWA / CLI / API / MCP: what an app can be used as. `all` also shows the ones it is not. */
+export const SURFACE_NAMES = { pwa: 'PWA', cli: 'CLI', api: 'API', mcp: 'MCP' };
+const SURFACE_TITLES = {
+  pwa: 'Installs as an app from the browser',
+  cli: 'Has a command line tool, installed with curl | sh',
+  api: 'Has an HTTP API',
+  mcp: 'Has an MCP server for AI agents',
+};
+export function surfaceFlags(app, { all = false } = {}) {
+  const s = app.surfaces ?? { pwa: true };
+  return Object.keys(SURFACE_NAMES)
+    .filter((k) => all || s[k])
+    .map((k) => `<span class="tag surf s-${k}${s[k] ? '' : ' off'}" title="${e(s[k] ? SURFACE_TITLES[k] : `No ${SURFACE_NAMES[k]} found`)}">${s[k] ? '' : '<span class="sr-only">no </span>'}${SURFACE_NAMES[k]}</span>`)
+    .join('');
 }
 
 /** The small "Works offline" tag on cards and the details page. */
@@ -293,6 +311,10 @@ function categoryChips(counts, active, keep = {}) {
 
 /* --------------------------------------------------------------- home -- */
 
+/** A one-line command with a Copy button. */
+export const cmdLine = (cmd, label = 'Copy the command') =>
+  `<div class="install-line"><code>${e(cmd)}</code><button class="btn sm" type="button" data-copy-text="${e(cmd)}" aria-label="${e(label)}">Copy</button></div>`;
+
 /** The one-line install, copyable, with the sign-in / upgrade / uninstall commands under it. */
 function installBar() {
   const cmd = `curl -fsSL ${config.siteUrl}/install.sh | sh`;
@@ -302,7 +324,7 @@ function installBar() {
       </div>`;
 }
 
-export function homePage({ featured, top, fresh, counts, stats, features = {} }) {
+export function homePage({ featured, top, fresh, counts, stats, features = {}, surfaces = {}, collections = [] }) {
   const tints = ['#e5eadb', '#f3e2d6', '#e1e6ee', '#efe6cf'];
   const body = `
 <div class="wrap">
@@ -347,7 +369,14 @@ export function homePage({ featured, top, fresh, counts, stats, features = {} })
   }
 
   <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}
-    <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a></div></section>
+    <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a>${['cli', 'mcp', 'api']
+      .map((k) => `<a class="chip" href="/apps?surface=${k}">Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
+      .join('')}</div></section>
+  ${
+    collections.length
+      ? `<section class="block"><div class="block-head"><h2>Collections for agentic workflows</h2><a href="/collections">All collections →</a></div><div class="col-grid">${collections.slice(0, 6).map(collectionCard).join('')}</div></section>`
+      : ''
+  }
   <section class="block"><div class="block-head"><h2>Top apps</h2><a href="/apps?sort=top">See all →</a></div>${grid(top)}</section>
   ${adSlot('home')}
   <section class="block"><div class="block-head"><h2>New this week</h2><a href="/apps?sort=new">See all →</a></div>${grid(fresh)}</section>
@@ -368,21 +397,26 @@ export function homePage({ featured, top, fresh, counts, stats, features = {} })
 
 /* ------------------------------------------------------------- browse -- */
 
-export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null, feature = null, features = {} }) {
+export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null, feature = null, features = {}, surface = null, surfaces = {} }) {
   const base = publisher ? `Apps by ${publisher.name}` : q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
-  const title = feature === 'offline' ? (q || category || publisher ? `${base} · works offline` : 'Web apps that work offline') : base;
-  const qs = (o, { feat = feature } = {}) => {
+  const offlineTitle = feature === 'offline' ? (q || category || publisher ? `${base} · works offline` : 'Web apps that work offline') : base;
+  const title = surface && surface !== 'pwa' ? `${offlineTitle} · with ${{ cli: 'a CLI', api: 'an API', mcp: 'an MCP server' }[surface]}` : offlineTitle;
+  const qs = (o, { feat = feature, surf = surface } = {}) => {
     const p = new URLSearchParams();
     if (q) p.set('q', q);
     if (category) p.set('category', category);
     if (publisher) p.set('publisher', publisher.slug);
     if (sort) p.set('sort', sort);
     if (feat) p.set('feature', feat);
+    if (surf) p.set('surface', surf);
     if (o) p.set('offset', o);
     return `/apps?${p}`;
   };
-  const keep = { ...(publisher ? { publisher: publisher.slug } : {}), ...(sort ? { sort } : {}), ...(feature ? { feature } : {}) };
-  const offlineChip = `<div class="chips" style="margin-top:12px"><a class="chip${feature === 'offline' ? ' on' : ''}" data-feature="offline" href="${e(qs(0, { feat: feature === 'offline' ? null : 'offline' }))}">${feature === 'offline' ? '✕ ' : ''}Works offline <small>${e(features.offline ?? 0)}</small></a></div>`;
+  const keep = { ...(publisher ? { publisher: publisher.slug } : {}), ...(sort ? { sort } : {}), ...(feature ? { feature } : {}), ...(surface ? { surface } : {}) };
+  const surfaceChips = ['cli', 'mcp', 'api']
+    .map((k) => `<a class="chip${surface === k ? ' on' : ''}" data-surface="${k}" href="${e(qs(0, { surf: surface === k ? null : k }))}">${surface === k ? '✕ ' : ''}Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
+    .join('');
+  const offlineChip = `<div class="chips" style="margin-top:12px"><a class="chip${feature === 'offline' ? ' on' : ''}" data-feature="offline" href="${e(qs(0, { feat: feature === 'offline' ? null : 'offline' }))}">${feature === 'offline' ? '✕ ' : ''}Works offline <small>${e(features.offline ?? 0)}</small></a>${surfaceChips}</div>`;
   const sorts = [['top', 'Top'], ['new', 'Newest'], ['rating', 'Top rated'], ['name', 'A–Z']];
   const body = `<div class="wrap">
   <section class="block" style="padding-top:40px">
@@ -391,7 +425,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${publisher ? `<div class="chips" style="margin-bottom:12px"><a class="chip on" href="/publishers/${e(publisher.slug)}">${e(publisher.name)}</a><a class="chip" href="/apps">✕ all publishers</a><a class="chip" href="/publishers">Browse publishers →</a></div>` : ''}
     ${categoryChips(counts, category, keep)}
     ${offlineChip}
-    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), ...(feature ? { feature } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
+    ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), ...(feature ? { feature } : {}), ...(surface ? { surface } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
   ${list.apps.length ? adSlot('browse') : ''}
   <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
@@ -400,7 +434,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${offset + limit < list.total ? `<a class="btn" href="${e(qs(offset + limit))}">Next →</a>` : ''}
   </div>
 </div>`;
-  return layout({ title, path: feature ? `/apps?feature=${feature}` : '/apps', body, stats, noindex: Boolean(q) });
+  return layout({ title, path: feature ? `/apps?feature=${feature}` : surface ? `/apps?surface=${surface}` : '/apps', body, stats, noindex: Boolean(q) });
 }
 
 /* ------------------------------------------------------------ details -- */
@@ -451,7 +485,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       <div class="eyebrow"><a href="/apps?category=${e(app.category)}" style="text-decoration:none">${e(app.category_name)}</a>${app.featured ? ' · <a href="/featured" style="text-decoration:none;color:#e2582f">★ Featured</a>' : ''}</div>
       <h1 style="margin-top:8px">${e(app.name)}</h1>
       <div class="by">by <a href="/publishers/${e(app.publisher.slug)}">${e(app.publisher.name)}</a> ${app.publisher.verified ? CHECK : ''} <span class="muted">· ${e(host)}</span></div>
-      ${app.offline ? `<div style="margin-top:8px"><a href="/apps?feature=offline" style="text-decoration:none">${OFFLINE_TAG}</a></div>` : ''}
+      <div class="flags" style="margin-top:8px">${surfaceFlags(app, { all: true })}${app.offline ? `<a href="/apps?feature=offline" style="text-decoration:none">${OFFLINE_TAG}</a>` : ''}</div>
       ${app.summary ? `<p class="lede" style="margin:12px 0 0;font-size:17px">${e(app.summary)}</p>` : ''}
       ${app.publisher.claimable ? claimNote(app.publisher) : ''}
       <div class="stats">
@@ -487,7 +521,8 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       <h2 style="margin-bottom:12px">About</h2>
       <div class="prose">${e(app.description || app.summary || 'No description yet.')}</div>
 
-      <h2 style="margin:36px 0 12px">Install it your way</h2>
+      <h2 id="use" style="margin:36px 0 12px">Install it your way</h2>
+      <h3 class="surf-head"><span class="tag surf s-pwa">PWA</span> As an app</h3>
       <div class="surfaces panel">
         <div class="surface"><span class="glyph">${SURFACE_ICONS.phone}</span><div><b>iPhone &amp; iPad</b> · Share → Add to Home Screen, or <a href="/apps/${e(app.slug)}/install.mobileconfig">the one-tap profile</a></div></div>
         <div class="surface"><span class="glyph">${SURFACE_ICONS.phone}</span><div><b>Android</b> · Install, then confirm in Chrome; it lands in your app drawer</div></div>
@@ -496,6 +531,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
         <div class="surface"><span class="glyph">${SURFACE_ICONS.term}</span><div><b>TronBrowser</b><code>tron --app=${e(start)}</code></div></div>
         <div class="surface"><span class="glyph">${SURFACE_ICONS.bot}</span><div><b>Agents</b> · ask any MCP client to “install ${e(app.name)} from pwamart”</div></div>
       </div>
+      ${surfaceInstructions(app)}
 
       ${whatsNew(app, releases)}
 
@@ -517,6 +553,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
           <dt>Website</dt><dd><a href="${e(safeUrl(app.origin))}" rel="noopener" target="_blank">${e(host)}</a></dd>
           <dt>Category</dt><dd>${e(app.category_name)}</dd>
           <dt>Opens as</dt><dd>${e(app.display ?? 'browser')}</dd>
+          <dt>Surfaces</dt><dd>${['PWA', ...['cli', 'api', 'mcp'].filter((k) => app.surfaces?.[k]).map((k) => SURFACE_NAMES[k])].join(' · ')}</dd>
           <dt>Offline</dt><dd>${app.offline ? 'Works offline' : app.offline_reason && !app.offline_reason.startsWith('not checked') ? `No (${e(app.offline_reason)})` : '–'}</dd>
           <dt>Price</dt><dd>Free to install</dd>
           ${app.updated_at ? `<dt>Checked</dt><dd>${e(new Date(app.checked_at ?? app.updated_at).toISOString().slice(0, 10))}</dd>` : ''}
@@ -549,6 +586,133 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
     stats,
     noindex: app.status !== 'published',
     head: `<link rel="alternate" type="application/rss+xml" title="${e(app.name)} releases" href="/apps/${e(app.slug)}/releases.xml"><script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
+  });
+}
+
+/** CLI, MCP and API instructions for the surfaces an app has; a note for its publisher about the rest. */
+export function surfaceInstructions(app) {
+  const s = app.surfaces ?? {};
+  const one = (mcp) => [{ slug: app.slug, surfaces: { mcp } }];
+  const out = [];
+  if (s.cli) {
+    const c = s.cli;
+    const script = safeUrl(c.script);
+    out.push(`<h3 class="surf-head"><span class="tag surf s-cli">CLI</span> From a terminal</h3>
+      <div class="surfaces panel">
+        ${c.install ? `<div><b>Install</b> · the publisher's own installer${script ? ` (<a href="${e(script)}" rel="noopener nofollow" target="_blank">read it first</a>)` : ''}${cmdLine(c.install, `Copy the ${app.name} install command`)}</div>` : ''}
+        ${c.w3bs ? `<div><b>${c.install ? 'Or with' : 'With'} w3bs</b>, which keeps it current with <code class="inline">w3bs update</code> · <a href="${e(safeUrl(c.w3bs_url))}" rel="noopener" target="_blank">on w3bs.org/packages ↗</a>${cmdLine(c.w3bs_install, 'Copy the w3bs install command')}<div class="muted" style="font-size:13px;margin-top:4px">No w3bs yet? <code class="inline">curl -fsSL https://w3bs.org/install.sh | sh</code></div></div>` : ''}
+        ${c.commands?.length ? `<div><b>Then run</b> ${c.commands.map((x) => `<code class="inline">${e(x)}</code>`).join(' ')} · try <code class="inline">${e(c.commands[0])} --help</code></div>` : ''}
+      </div>`);
+  }
+  if (s.mcp) {
+    const m = s.mcp;
+    const json = JSON.stringify(mcpConfig(one(m)), null, 2);
+    out.push(`<h3 class="surf-head"><span class="tag surf s-mcp">MCP</span> For AI agents</h3>
+      <div class="surfaces panel">
+        <div><b>Claude Code</b>${cmdLine(claudeMcpLines(one(m))[0], 'Copy the claude mcp add command')}</div>
+        ${m.url && m.stdio ? `<div><b>Or locally, over stdio</b>${cmdLine(m.stdio)}</div>` : ''}
+        <div><b>Claude Desktop, Cursor and other clients</b> · add it under <code class="inline">mcpServers</code> (or a project's <code class="inline">.mcp.json</code>)<pre class="code">${e(json)}</pre></div>
+        ${m.url ? `<div class="muted" style="font-size:13px">Streamable HTTP endpoint <code class="inline">${e(m.url)}</code>${m.name ? ` · server <code class="inline">${e(m.name)}</code>` : ''}${m.auth ? " · needs the app's API key (see its docs)" : ''}</div>` : ''}
+      </div>`);
+  }
+  if (s.api) {
+    const a = s.api;
+    const docs = safeUrl(a.docs);
+    const openapi = safeUrl(a.openapi);
+    out.push(`<h3 class="surf-head"><span class="tag surf s-api">API</span> Over HTTP</h3>
+      <div class="surfaces panel">
+        <div><b>Base URL</b>${cmdLine(a.base, 'Copy the API base URL')}</div>
+        ${openapi ? `<div><b>OpenAPI</b> · <a href="${e(openapi)}" rel="noopener nofollow" target="_blank">${e(openapi)}</a>: generate a client, or load it into an agent as tools</div>` : ''}
+        ${docs ? `<div><b>Hand the docs to an agent</b>${cmdLine(`curl -fsSL ${docs}`, 'Copy the docs command')}</div>` : ''}
+      </div>`);
+  }
+  const missing = ['cli', 'api', 'mcp'].filter((k) => !s[k]).map((k) => SURFACE_NAMES[k]);
+  if (missing.length)
+    out.push(`<p class="muted" style="font-size:13px;margin:10px 0 0">No ${missing.join(', ')} found for this app. Publisher? Serve <code class="inline">/install.sh</code>, <code class="inline">/mcp</code> or <code class="inline">/openapi.json</code> and press Refresh, or set them yourself (<a href="/developers#surfaces">how</a>).</p>`);
+  return out.join('\n');
+}
+
+/* -------------------------------------------------------- collections -- */
+
+export function collectionCard(c) {
+  return `<a class="col-card" href="/collections/${e(c.slug)}">
+    <div class="col-icons">${c.apps.slice(0, 5).map((a) => icon(a, 'icon', 36)).join('')}</div>
+    <div class="eyebrow">${e(c.counts.apps)} app${c.counts.apps === 1 ? '' : 's'}${['cli', 'mcp', 'api'].map((k) => (c.counts[k] ? ` · ${c.counts[k]} ${SURFACE_NAMES[k]}` : '')).join('')}</div>
+    <h3>${e(c.title)}</h3>
+    <p class="muted">${e(c.subtitle)}</p>
+    <span class="col-go">Explore collection →</span>
+  </a>`;
+}
+
+export function collectionsPage({ sections, totals, stats }) {
+  const body = `<div class="wrap">
+  <section class="block" style="padding-top:40px">
+    <div class="eyebrow">Collections</div>
+    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">Agentic workflows, <em>ready in one command</em>.</h1>
+    <p class="lede" style="max-width:720px">Apps grouped by what your agents do. Open one, untick what you do not want, and copy a single line: every CLI installs with its publisher's own <code>curl | sh</code>, every MCP server lands in one config, and every PWA installs as an app.</p>
+    <div class="stats" style="max-width:600px"><div><b>${e(totals.collections)}</b><span>collections</span></div><div><b>${e(totals.apps)}</b><span>apps</span></div><div><b>${e(totals.cli)}</b><span>CLIs</span></div><div><b>${e(totals.mcp)}</b><span>MCP servers</span></div><div><b>1</b><span>command</span></div></div>
+  </section>
+  ${sections
+    .filter((s) => s.collections.length)
+    .map((s) => `<section class="block"><div class="block-head"><h2>${e(s.title)}</h2></div><div class="col-grid">${s.collections.map(collectionCard).join('')}</div></section>`)
+    .join('')}
+</div>`;
+  return layout({
+    title: 'Collections: agentic workflows in one command',
+    description: 'Apps for agentic workflows, grouped and installable in one command: CLIs, MCP servers, APIs and PWAs.',
+    path: '/collections',
+    body,
+    stats,
+  });
+}
+
+export function collectionPage({ col, summary, apps, stats }) {
+  const mcpApps = apps.filter((a) => a.surfaces?.mcp);
+  const apiApps = apps.filter((a) => a.surfaces?.api);
+  const mcpText = claudeMcpLines(mcpApps).join('\n');
+  const iosPath = `/bundle.mobileconfig?apps=${apps.map((a) => a.slug).join(',')}`;
+  const body = `<div class="wrap" data-collection="${e(col.slug)}" data-site="${e(config.siteUrl)}">
+  <section class="block" style="padding-top:40px">
+    <div class="eyebrow"><a href="/collections" style="text-decoration:none">Collections</a> · ${e(summary.counts.apps)} apps</div>
+    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(col.title)}</h1>
+    <p class="lede">${e(col.subtitle)}</p>
+    <div class="stats" style="max-width:560px"><div><b>${e(summary.counts.apps)}</b><span>apps</span></div><div><b>${e(summary.counts.cli)}</b><span>CLIs</span></div><div><b>${e(summary.counts.mcp)}</b><span>MCP servers</span></div><div><b>${e(summary.counts.api)}</b><span>APIs</span></div></div>
+  </section>
+
+  <section class="block" style="padding-top:0">
+    <h2 style="margin-bottom:12px">Install the collection</h2>
+    <div class="surfaces panel">
+      <div><span class="tag surf s-cli">CLI</span> <b>Every CLI, one command</b> · runs each app's own installer in turn, and carries on past one that fails
+        <div class="install-line"><code data-col-out="cli">${e(summary.install.cli)}</code><button class="btn sm" type="button" data-col-copy="cli" data-copy-text="${e(summary.install.cli)}" aria-label="Copy the collection install command">Copy</button></div>
+        <div class="muted" style="font-size:13px;margin-top:4px">Read it first: <a data-col-href="install.sh" href="/collections/${e(col.slug)}/install.sh">install.sh</a></div></div>
+      ${
+        mcpApps.length
+          ? `<div><span class="tag surf s-mcp">MCP</span> <b>Every MCP server</b> · paste into a terminal for Claude Code, or drop <a data-col-href="mcp.json" href="/collections/${e(col.slug)}/mcp.json">mcp.json</a> into Claude Desktop, Cursor or a project's <code class="inline">.mcp.json</code>
+        <pre class="code" data-col-out="mcp">${e(mcpText)}</pre><button class="btn sm" type="button" data-col-copy="mcp" data-copy-text="${e(mcpText)}" aria-label="Copy the claude mcp add commands">Copy</button></div>`
+          : ''
+      }
+      <div><span class="tag surf s-pwa">PWA</span> <b>Every app on iPhone and iPad</b> · <a data-col-href="ios" href="${e(iosPath)}">one profile</a> adds them all to the home screen; elsewhere, Install on each app's page</div>
+      ${apiApps.length ? `<div><span class="tag surf s-api">API</span> <b>APIs</b> · ${apiApps.map((a) => `<a href="/apps/${e(a.slug)}#use">${e(a.name)}</a>`).join(', ')}: base URLs and docs on each page</div>` : ''}
+    </div>
+  </section>
+
+  <section class="block" style="padding-top:0">
+    <div class="block-head"><h2>In this collection</h2><span class="muted" style="font-size:14px">Untick an app to leave it out of the commands</span></div>
+    <div class="col-list">${apps
+      .map(
+        (a) => `<label class="col-row"><input type="checkbox" checked data-col-app="${e(a.slug)}" data-mcp="${e(claudeMcpLines([a])[0] ?? '')}">
+        ${icon(a, 'icon', 44)}
+        <span class="col-row-body"><a href="/apps/${e(a.slug)}"><b>${e(a.name)}</b></a> <span class="muted">${e(a.summary ?? '')}</span><span class="flags">${surfaceFlags(a, { all: true })}</span></span></label>`,
+      )
+      .join('')}</div>
+  </section>
+</div>`;
+  return layout({
+    title: `${col.title}: a pwamart collection`,
+    description: `${col.subtitle}. ${summary.counts.apps} apps, installable in one command.`,
+    path: `/collections/${col.slug}`,
+    body,
+    stats,
   });
 }
 
@@ -644,6 +808,18 @@ export function developersPage({ stats }) {
     <p style="display:flex;gap:12px;flex-wrap:wrap"><img src="/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"><img src="/badges/get-it-on-pwamart-light.svg" alt="Get it on pwamart" width="135" height="40"></p>
     <div class="term"><div>[![Get it on pwamart](${e(site)}/badges/get-it-on-pwamart.svg)](${e(site)}/apps/YOUR-SLUG)</div></div>
     <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
+  </section>
+  <section class="block" id="surfaces"><h2>4 · Your CLI, API and MCP server</h2>
+    <p>Every listing is a PWA. If your app is also a <span class="tag surf s-cli">CLI</span>, an <span class="tag surf s-api">API</span> or an <span class="tag surf s-mcp">MCP</span> server, the listing says so, shows how to install and use each one, and puts it in the <a href="/collections">collections</a> that install in one command. We look for them on your app's own origin each week, and when you press Refresh:</p>
+    <ul>
+      <li><b>CLI</b>: a shell script at <code>/install.sh</code> (it must start with <code>#!</code>), shown as <code>curl -fsSL https://your.app/install.sh | sh</code>. If your tool is in the <a href="https://w3bs.org/packages" rel="noopener">w3bs package catalog</a>, its entry is used and the page adds <code>w3bs install your.app/tool</code>.</li>
+      <li><b>MCP</b>: a streamable-HTTP server that answers <code>initialize</code> at <code>/mcp</code>, <code>/api/mcp</code>, or an MCP URL on your host named in <code>/llms.txt</code>; an <code>npx -y …mcp</code> line in llms.txt becomes the stdio command.</li>
+      <li><b>API</b>: <code>/openapi.json</code> (or an OpenAPI link in llms.txt), a JSON <code>/api/v1/health</code>, or <code>/api/</code> paths in llms.txt.</li>
+    </ul>
+    <p>Somewhere else, or wrong? Set it yourself; what you set wins, and <code>false</code> hides one we found:</p>
+    <div class="term"><div>pwamart surfaces your-app --cli https://your.app/install.sh --mcp https://your.app/mcp --api https://your.app/api/v1</div>
+      <div>curl -X PATCH ${e(site)}/api/v1/apps/your-app -H "authorization: Bearer pm_live_…" -H "content-type: application/json" \\</div>
+      <div>  -d '{"surfaces":{"cli":{"script":"https://your.app/install.sh","w3bs":"your.app/tool"},"mcp":{"url":"https://your.app/mcp"},"api":false}}'</div></div>
   </section>
   <section class="block" id="cli"><h2>CLI &amp; TUI</h2>
     <p>One line installs it with bun or npm, whichever you have; nothing asks for root:</p>

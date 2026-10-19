@@ -8,9 +8,11 @@ import { applyPurchase, billingState, currentPlan, quote, setRenew } from './bil
 import { checkClaim, shapeClaim, startClaim } from './imports.js';
 import { follow as followFn } from './releases.js';
 import { vapidKeysFromEnv } from '@profullstack/notifications/server';
-import { FEATURES, PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureKey, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
+import { FEATURES, PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureKey, surfaceCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, featureColumns, inspect, verifyOrigin } from './inspect.js';
+import { SURFACES, cleanSurfaceSet, detectSurfaces, keysOf, mergeSurfaces, surfaceKey, w3bsCatalog } from './surfaces.js';
+import { allCollections, collectionApps, getCollection, summarize } from './collections.js';
 import { sharedHost } from './shared-hosts.js';
 import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
@@ -260,6 +262,8 @@ api.get('/apps', async (c) => {
   const raw = q.feature || (q.offline === '1' || q.offline === 'true' ? 'offline' : null);
   const feature = featureKey(raw);
   if (raw && !feature) return c.json({ error: `unknown feature; one of: ${Object.keys(FEATURES).join(', ')}` }, 400);
+  const surface = surfaceKey(q.surface);
+  if (q.surface && !surface) return c.json({ error: `unknown surface; one of: ${Object.keys(SURFACES).join(', ')}` }, 400);
   return c.json(
     await listApps({
       q: q.q,
@@ -267,11 +271,29 @@ api.get('/apps', async (c) => {
       publisher: q.publisher,
       featured: q.featured === '1' || q.featured === 'true',
       feature,
+      surface,
       sort: q.sort,
       limit: q.limit,
       offset: q.offset,
     }),
   );
+});
+
+/** How many published apps are each surface: every one is a PWA; some are also a CLI, API or MCP server. */
+api.get('/surfaces', async (c) => {
+  const n = await surfaceCounts();
+  return c.json({ surfaces: Object.entries(SURFACES).map(([key, name]) => ({ key, name, apps: n[key] ?? 0 })) });
+});
+
+api.get('/collections', async (c) => {
+  const all = await allCollections(config.siteUrl);
+  return c.json({ collections: all.map(({ apps, ...x }) => ({ ...x, apps: apps.map((a) => a.slug) })) });
+});
+
+api.get('/collections/:slug', async (c) => {
+  const col = getCollection(c.req.param('slug'));
+  if (!col) return c.json({ error: 'no such collection' }, 404);
+  return c.json({ collection: summarize(col, await collectionApps(col), config.siteUrl) });
 });
 
 api.get('/apps/:slug', async (c) => {
@@ -588,6 +610,15 @@ api.patch('/apps/:slug', async (c) => {
       projectId = pr.id;
     }
   }
+  let surfacesSet = null;
+  if (b.surfaces !== undefined) {
+    try {
+      surfacesSet = { ...(row.surfaces_set ?? {}), ...cleanSurfaceSet(b.surfaces) };
+    } catch (err) {
+      fail(400, err.message);
+    }
+    for (const [k, v] of Object.entries(surfacesSet)) if (v === null) delete surfacesSet[k];
+  }
   await db()`
     update apps set
       name = coalesce(${str(b.name, 80)}, name),
@@ -596,6 +627,7 @@ api.patch('/apps/:slug', async (c) => {
       category = coalesce(${CATEGORY_NAMES[b.category] ? b.category : null}, category),
       tags = coalesce(${Array.isArray(b.tags) ? b.tags.map((t) => slugify(t)).filter(Boolean).slice(0, 10) : null}, tags),
       project_id = ${projectId},
+      ${surfacesSet ? db()`surfaces_set = ${db().json(surfacesSet)}, surface_keys = ${keysOf(mergeSurfaces(row.surfaces, surfacesSet))}::text[],` : db()``}
       updated_at = now()
     where id = ${row.id}`;
   return c.json({ app: shape(await getApp(row.slug, { includeDrafts: true })) });
@@ -608,6 +640,9 @@ api.post('/apps/:slug/refresh', async (c) => {
   if (r.origin !== row.origin) fail(409, `the URL now lands on ${r.origin}; submit it as a new app`);
   const f = fromReport(r);
   await db()`update apps set ${db()(f)}, checked_at = now(), updated_at = now() where id = ${row.id}`;
+  // CLI / API / MCP too: a publisher who just added an install.sh or /mcp sees it now, not next week.
+  const d = await detectSurfaces({ origin: row.origin, catalog: await w3bsCatalog(), slug: row.slug }).catch(() => null);
+  if (d) await db()`update apps set surfaces = ${db().json(d)}, surface_keys = ${keysOf(mergeSurfaces(d, row.surfaces_set))}::text[], surfaces_checked_at = now() where id = ${row.id}`;
   return c.json({ app: shape(await getApp(row.slug, { includeDrafts: true })) });
 });
 

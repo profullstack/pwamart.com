@@ -22,6 +22,7 @@ export const TOOLS = [
         sort: { type: 'string', enum: ['top', 'new', 'rating', 'name'] },
         feature: { type: 'string', enum: ['offline'], description: 'only apps with this detected feature; offline = its service worker answers from a cache' },
         offline: { type: 'boolean', description: 'shorthand for feature: "offline"' },
+        surface: { type: 'string', enum: ['cli', 'api', 'mcp'], description: 'only apps that are also a CLI (curl | sh installer), an HTTP API or an MCP server' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
       additionalProperties: false,
@@ -30,6 +31,16 @@ export const TOOLS = [
   {
     name: 'get_app',
     description: 'Full details of one app by slug: description, screenshots, installability checks, publisher and install instructions for every platform.',
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
+    name: 'list_collections',
+    description: 'Collections of apps for agentic workflows (coding, payments, ops, growth, research, talking to humans; every MCP server, CLI or API). Each has one command that installs every CLI in it and one MCP config for every server.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'get_collection',
+    description: "One collection's apps, with each app's surfaces (CLI install command, MCP endpoint, API base) and the collection's one-command installs.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
@@ -147,10 +158,10 @@ export async function callTool(name, args, call, siteUrl) {
   switch (name) {
     case 'search_apps': {
       const feature = args.feature ?? (args.offline ? 'offline' : undefined);
-      const r = await call(`/apps?${q({ q: args.query, category: args.category, sort: args.sort, feature, limit: args.limit ?? 10 })}`);
+      const r = await call(`/apps?${q({ q: args.query, category: args.category, sort: args.sort, feature, surface: args.surface, limit: args.limit ?? 10 })}`);
       return text({
         total: r.total,
-        apps: r.apps.map((a) => ({ slug: a.slug, name: a.name, summary: a.summary, publisher: a.publisher.name, category: a.category, features: a.features ?? [], rating: a.rating, installs: a.installs, url: a.start_url, page: `${siteUrl}/apps/${a.slug}` })),
+        apps: r.apps.map((a) => ({ slug: a.slug, name: a.name, summary: a.summary, publisher: a.publisher.name, category: a.category, features: a.features ?? [], surfaces: a.surfaces, rating: a.rating, installs: a.installs, url: a.start_url, page: `${siteUrl}/apps/${a.slug}` })),
       });
     }
     case 'get_app': {
@@ -159,6 +170,10 @@ export async function callTool(name, args, call, siteUrl) {
     }
     case 'list_categories':
       return text((await call('/categories')).categories);
+    case 'list_collections':
+      return text((await call('/collections')).collections);
+    case 'get_collection':
+      return text((await call(`/collections/${encodeURIComponent(args.slug)}`)).collection);
     case 'install_app': {
       const r = await call(`/apps/${encodeURIComponent(args.slug)}`);
       await call(`/apps/${encodeURIComponent(args.slug)}/installs`, json('POST', { method: 'mcp' })).catch(() => {});
@@ -205,7 +220,7 @@ export async function handleRpc(req, { call, siteUrl, version }) {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: 'pwamart', version },
-        instructions: 'pwamart is an app store for installable web apps (PWAs). Search with search_apps, read one with get_app, and use install_app for platform steps. Publishing tools need an API key.',
+        instructions: 'pwamart is an app store for installable web apps (PWAs). Search with search_apps (surface=cli|api|mcp for apps that are also a CLI, API or MCP server), read one with get_app, use install_app for platform steps, and list_collections / get_collection for agentic workflow bundles that install in one command. Publishing tools need an API key.',
       };
     case 'tools/list':
       return { tools: TOOLS };
