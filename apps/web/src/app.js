@@ -8,12 +8,14 @@ import * as auth from './auth.js';
 import { getCookie } from 'hono/cookie';
 import { mountOAuth } from './oauth.js';
 import { mountCoinPaySignin } from './coinpay-signin.js';
-import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, featureKey, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
+import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, featureKey, surfaceCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { advertisePage, appPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
+import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, installScript, mcpConfig, pick, summarize } from './collections.js';
+import { surfaceKey } from './surfaces.js';
 import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
 import { networkStats } from './crawlproof.js';
@@ -88,15 +90,18 @@ const html = (c, body, status = 200) => c.html(body, status, { 'cache-control': 
 /* ---------------------------------------------------------------- pages -- */
 
 app.get('/', async (c) => {
-  const [featured, top, fresh, counts, features, s] = await Promise.all([
+  const [featured, top, fresh, counts, features, surfaces, collections, s] = await Promise.all([
     listApps({ featured: true, limit: 4 }),
     listApps({ sort: 'top', limit: 12 }),
     listApps({ sort: 'new', limit: 8 }),
     categoryCounts(),
     featureCounts(),
+    surfaceCounts(),
+    allCollections(config.siteUrl),
     stats(),
   ]);
-  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, stats: s }));
+  const workflows = collections.filter((x) => x.section === 'workflows');
+  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, surfaces, collections: workflows, stats: s }));
 });
 
 app.get('/apps', async (c) => {
@@ -107,13 +112,15 @@ app.get('/apps', async (c) => {
   const limit = 24;
   const publisher = c.req.query('publisher') ? await getPublisher(c.req.query('publisher')) : null;
   const feature = featureKey(c.req.query('feature')) ?? (c.req.query('offline') === '1' ? 'offline' : null);
-  const [list, counts, features, s] = await Promise.all([
-    listApps({ q, category, publisher: publisher?.slug, feature, sort: sort ?? 'top', limit, offset }),
+  const surface = surfaceKey(c.req.query('surface'));
+  const [list, counts, features, surfaces, s] = await Promise.all([
+    listApps({ q, category, publisher: publisher?.slug, feature, surface, sort: sort ?? 'top', limit, offset }),
     categoryCounts(),
     featureCounts(),
+    surfaceCounts(),
     stats(),
   ]);
-  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher, feature, features }));
+  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher, feature, features, surface, surfaces }));
 });
 
 app.get('/publishers', async (c) => {
@@ -166,6 +173,40 @@ app.get('/bundle.mobileconfig', async (c) => {
     'content-type': 'application/x-apple-aspen-config',
     'content-disposition': 'attachment; filename="pwamart-bundle.mobileconfig"',
   });
+});
+
+/* ---------------------------------------------------------- collections -- */
+
+app.get('/collections', async (c) => {
+  const [all, s] = await Promise.all([allCollections(config.siteUrl), stats()]);
+  const members = new Map(all.flatMap((x) => x.apps.map((a) => [a.slug, a])));
+  const has = (k) => [...members.values()].filter((a) => a.surfaces?.[k]).length;
+  const sections = SECTIONS.map(([key, title]) => ({ title, collections: all.filter((x) => x.section === key) }));
+  return html(c, collectionsPage({ sections, totals: { collections: all.length, apps: members.size, cli: has('cli'), mcp: has('mcp') }, stats: s }));
+});
+
+app.get('/collections/:slug', async (c) => {
+  const col = getCollection(c.req.param('slug'));
+  if (!col) return c.html(notFoundPage({ stats: await stats() }), 404);
+  const [apps, s] = await Promise.all([collectionApps(col), stats()]);
+  if (!apps.length) return c.html(notFoundPage({ stats: s }), 404);
+  return html(c, collectionPage({ col, summary: summarize(col, apps, config.siteUrl), apps, stats: s }));
+});
+
+// One script for every member's CLI (?apps=a,b for some of them); `curl ... | sh` runs it.
+app.get('/collections/:slug/install.sh', async (c) => {
+  const col = getCollection(c.req.param('slug'));
+  if (!col) return c.text('echo "no such collection" >&2; exit 1\n', 404);
+  const apps = pick(await collectionApps(col), c.req.query('apps'));
+  return c.body(installScript(col, apps, config.siteUrl), 200, { 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'public, max-age=300' });
+});
+
+// Every member's MCP server as one mcpServers config (?apps=a,b for some of them).
+app.get('/collections/:slug/mcp.json', async (c) => {
+  const col = getCollection(c.req.param('slug'));
+  if (!col) return c.json({ error: 'no such collection' }, 404);
+  const apps = pick(await collectionApps(col), c.req.query('apps'));
+  return c.json(mcpConfig(apps), 200, { 'cache-control': 'public, max-age=300' });
 });
 
 app.get('/publishers/:slug', async (c) => {
@@ -512,6 +553,9 @@ app.get('/sitemap.xml', async (c) => {
     u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     u('/apps?feature=offline'),
+    u('/collections'),
+    ...COLLECTIONS.map((x) => u(`/collections/${x.slug}`)),
+    ...['cli', 'api', 'mcp'].map((k) => u(`/apps?surface=${k}`)),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
     ...pubs.map((p) => u(`/publishers/${p.slug}`)),
   ].join('');
@@ -531,15 +575,18 @@ Unlimited $199/year (unlimited publishers and apps, shared orgs, teams, projects
 
 ## API (${config.siteUrl}/api/v1)
 Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one in the console under API keys).
-- GET  /apps?q=&category=&publisher=&feature=offline&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
-- GET  /apps/:slug                         details, publisher, reviews
+- GET  /apps?q=&category=&publisher=&feature=offline&surface=cli|api|mcp&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
+- GET  /apps/:slug                         details, publisher, reviews; app.surfaces = {pwa, cli, api, mcp} with install commands
+- GET  /surfaces                           how many apps are a PWA (all), a CLI, an API, an MCP server
+- GET  /collections, GET /collections/:slug   agentic workflow collections, each with one-command installs
 - POST /apps/:slug/installs {method}       count an install
 - GET  /categories, GET /plans, GET /publishers?q=&filter=all|claimed|imported|verified&sort=apps|name|new, GET /publishers/:slug
 - GET  /me                                 your plan, usage, orgs and publishers
 - POST /publishers {name, slug?, org?}
 - POST /apps {publisher, url, category?, slug?}   inspect + create a draft
 - POST /apps/:slug/verify | /refresh | /publish | /unlist | /unpublish
-- PATCH /apps/:slug {name, summary, description, category, tags, project}
+- PATCH /apps/:slug {name, summary, description, category, tags, project, surfaces}
+  surfaces: {cli: {script|install, w3bs, commands}, api: {base, openapi, docs}, mcp: {url, stdio}}; a key set to false hides a detected surface, null returns it to detection
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
@@ -552,14 +599,28 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 $19, paid once in crypto: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
 for the same week; reach: ${config.siteUrl}/advertise. Newsletter: ${config.siteUrl}/newsletter
 
+## Surfaces: PWA, CLI, API, MCP
+Every listing is a PWA. The store also finds, on the app's own origin: a CLI (a shell
+installer at /install.sh, or its entry in the w3bs catalog at https://w3bs.org/packages),
+an MCP server (answers initialize at /mcp, /api/mcp or a URL in its llms.txt) and an API
+(/openapi.json, /api/v1/health or /api/ paths in llms.txt). Re-checked weekly and on
+POST /apps/:slug/refresh. Filter with ?surface=cli|api|mcp.
+
+## Collections (${config.siteUrl}/collections)
+Apps grouped by agentic workflow. Each installs in one command:
+- curl -fsSL ${config.siteUrl}/collections/<slug>/install.sh | sh     every member's own CLI installer (?apps=a,b for some)
+- ${config.siteUrl}/collections/<slug>/mcp.json                        every member's MCP server as an mcpServers config
+Collections: ${COLLECTIONS.map((x) => x.slug).join(', ')}
+
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)
 - stdio: npx -y @profullstack/pwamart-mcp   (PWAMART_API_KEY for publishing tools)
-Tools: search_apps, get_app, list_categories, install_app, submit_app, verify_app, publish_app
+Tools: search_apps (surface=cli|api|mcp), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app
 
 ## CLI + TUI
 - curl -fsSL ${config.siteUrl}/install.sh | sh    (or npm i -g @profullstack/pwamart)
-- pwamart search <q> | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
+- pwamart search <q> [--surface cli|api|mcp] | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
+- pwamart collections [slug]   agentic workflow collections and their one-command installs
 - pwamart login (OAuth 2.1, browser; --manual over SSH) | logout | whoami | upgrade | uninstall
 - curl -fsSL ${config.siteUrl}/upgrade.sh | sh ; curl -fsSL ${config.siteUrl}/uninstall.sh | sh
 

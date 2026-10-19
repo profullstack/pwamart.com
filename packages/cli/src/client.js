@@ -77,7 +77,10 @@ const post = (body) => ({ method: 'POST', body: JSON.stringify(body ?? {}) });
 const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();
 
 export const health = (auth) => call(auth, '/health');
-export const search = (auth, { q, category, sort, feature, limit = 20, offset } = {}) => call(auth, `/apps?${qs({ q, category, sort, feature, limit, offset })}`);
+export const search = (auth, { q, category, sort, feature, surface, limit = 20, offset } = {}) => call(auth, `/apps?${qs({ q, category, sort, feature, surface, limit, offset })}`);
+export const collections = (auth) => call(auth, '/collections');
+export const collection = (auth, slug) => call(auth, `/collections/${encodeURIComponent(slug)}`);
+export const updateApp = (auth, slug, body) => call(auth, `/apps/${encodeURIComponent(slug)}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const getApp = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}`);
 export const categories = (auth) => call(auth, '/categories');
 export const countInstall = (auth, slug, method) => call(auth, `/apps/${encodeURIComponent(slug)}/installs`, post({ method }));

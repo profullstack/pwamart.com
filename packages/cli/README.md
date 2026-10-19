@@ -7,6 +7,8 @@ curl -fsSL https://pwamart.com/install.sh | sh     # or: npm i -g @profullstack/
 
 pwamart search notes
 pwamart browse --offline    # only apps whose service worker works offline
+pwamart search --surface mcp   # apps that are also an MCP server (or cli, api)
+pwamart collections [slug]  # agentic workflow collections: one curl | sh installs every CLI
 pwamart info <slug>
 pwamart install <slug>      # opens it as an app window, writes a launcher entry (Linux)
 pwamart tui                 # the whole store in your terminal, on hqtui
@@ -23,6 +25,7 @@ pwamart publisher "Acme Apps"
 pwamart check https://your.app            # grade installability
 pwamart submit https://your.app --publisher acme-apps
 pwamart verify <slug> && pwamart publish <slug>
+pwamart surfaces <slug> --cli https://your.app/install.sh --mcp https://your.app/mcp
 ```
 
 Environment: `PWAMART_API_KEY`, `PWAMART_URL`, `PWAMART_BROWSER`.

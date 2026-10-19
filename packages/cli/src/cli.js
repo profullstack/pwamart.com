@@ -12,13 +12,14 @@ import { installApp } from './install.js';
 const HELP = `pwamart: find and install web apps (PWAs) on any device.
 
 Browse
-  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--json]
+  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--surface cli|api|mcp] [--json]
   pwamart browse [--category C] [--offline]   the same list; --offline: only apps that work offline
   pwamart info <slug> [--json]
   pwamart install <slug> [--no-launch]   open it as an app window + add a launcher entry
   pwamart uninstall <slug>               remove the launcher entry
   pwamart open <slug>                    open in your default browser
   pwamart categories
+  pwamart collections [slug] [--json]    agentic workflow collections + their one-command installs
   pwamart tui                            the store in your terminal (hqtui)
 
 Account (OAuth 2.1: opens your browser, no keys to paste)
@@ -38,6 +39,8 @@ Publish
   pwamart verify <slug>
   pwamart publish <slug>
   pwamart apps                           your apps and their status
+  pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL]
+                                         say where your app's CLI, MCP server and API are (what you set wins)
   pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
   pwamart releases <slug>                what's new in an app
@@ -80,9 +83,25 @@ export function formatList(r) {
   if (!r.apps.length) return 'No apps found.';
   const w = Math.min(28, Math.max(...r.apps.map((a) => a.slug.length)));
   const lines = r.apps.map(
-    (a) => `${a.slug.padEnd(w)}  ${a.name.slice(0, 30).padEnd(30)}  ${stars(a.rating).padEnd(6)}  ${String(a.installs).padStart(6)} ↓  ${a.offline ? 'offline  ' : ''}${a.publisher.name}`,
+    (a) => `${a.slug.padEnd(w)}  ${a.name.slice(0, 30).padEnd(30)}  ${stars(a.rating).padEnd(6)}  ${String(a.installs).padStart(6)} ↓  ${surfaceTags(a).padEnd(15)}  ${a.offline ? 'offline  ' : ''}${a.publisher.name}`,
   );
   return `${lines.join('\n')}\n\n${r.total} app${r.total === 1 ? '' : 's'}${r.total > r.apps.length ? ` (showing ${r.apps.length})` : ''} · pwamart install <slug>`;
+}
+
+/** "PWA CLI MCP": what an app can be used as. */
+export const surfaceTags = (a) => ['pwa', 'cli', 'api', 'mcp'].filter((k) => (k === 'pwa' ? true : a.surfaces?.[k])).map((k) => k.toUpperCase()).join(' ');
+
+/** How to use each surface an app has, one line per command. */
+export function surfaceLines(app) {
+  const s = app.surfaces ?? {};
+  const out = [];
+  if (s.cli?.install) out.push(`CLI       ${s.cli.install}`);
+  if (s.cli?.w3bs) out.push(`w3bs      ${s.cli.w3bs_install ?? `w3bs install ${s.cli.w3bs}`}   (${s.cli.w3bs_url ?? 'https://w3bs.org/packages'})`);
+  if (s.cli?.commands?.length) out.push(`Commands  ${s.cli.commands.join(', ')}`);
+  if (s.mcp?.url) out.push(`MCP       claude mcp add --transport http ${app.slug} ${s.mcp.url}`);
+  if (s.mcp?.stdio) out.push(`${s.mcp.url ? 'MCP stdio' : 'MCP      '} ${s.mcp.stdio}`);
+  if (s.api) out.push(`API       ${s.api.base}${s.api.docs ? `   docs: ${s.api.docs}` : ''}`);
+  return out;
 }
 
 export function formatApp({ app, publisher }, server = "https://pwamart.com") {
@@ -97,6 +116,8 @@ export function formatApp({ app, publisher }, server = "https://pwamart.com") {
     `Page      ${server}/apps/${app.slug}`,
     `Score     ${app.score ?? '–'}%  ${req.map((c) => `${c.ok ? '✓' : '✕'} ${c.label}`).join('  ')}`,
     `Offline   ${app.offline ? 'yes' : app.offline_reason ? `no (${app.offline_reason})` : '–'}`,
+    `Surfaces  ${surfaceTags(app)}`,
+    ...surfaceLines(app),
     `iOS       ${server}/apps/${app.slug}/install.mobileconfig`,
     `Install   pwamart install ${app.slug}`,
   ].join('\n');
@@ -132,13 +153,45 @@ export async function main(argv = process.argv.slice(2)) {
     case 'browse':
     case 'ls': {
       const feature = flags.offline === true || flags.offline === 'true' ? 'offline' : typeof flags.feature === 'string' ? flags.feature : undefined;
-      const r = await api.search(auth, { q: rest.join(' ') || undefined, category: flags.category, sort: flags.sort, feature, limit: flags.limit ?? 20 });
+      const surface = typeof flags.surface === 'string' ? flags.surface : undefined;
+      const r = await api.search(auth, { q: rest.join(' ') || undefined, category: flags.category, sort: flags.sort, feature, surface, limit: flags.limit ?? 20 });
       out(r, formatList(r));
       return 0;
     }
     case 'categories': {
       const r = await api.categories(auth);
       out(r, r.categories.map((c) => `${c.slug.padEnd(18)} ${c.name.padEnd(20)} ${c.apps}`).join('\n'));
+      return 0;
+    }
+    case 'collections':
+    case 'collection': {
+      if (rest[0]) {
+        const { collection: c } = await api.collection(auth, rest[0]);
+        out(c, [
+          `${c.title}  (${c.counts.apps} apps · ${c.counts.cli} CLI · ${c.counts.mcp} MCP · ${c.counts.api} API)`,
+          c.subtitle,
+          '',
+          `Every CLI   ${c.install.cli}`,
+          `Every MCP   ${c.install.mcp_config}`,
+          `iPhone      ${c.install.ios_profile}`,
+          '',
+          ...c.apps.map((a) => `${a.slug.padEnd(22)} ${surfaceTags(a).padEnd(15)} ${a.summary ?? ''}`),
+        ].join('\n'));
+        return 0;
+      }
+      const r = await api.collections(auth);
+      out(r, `${r.collections.map((c) => `${c.slug.padEnd(18)} ${c.title.padEnd(24)} ${String(c.counts.apps).padStart(3)} apps  ${c.install.cli}`).join('\n')}\n\npwamart collections <slug> for its apps`);
+      return 0;
+    }
+    case 'surfaces': {
+      if (!rest[0]) throw new Error('usage: pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL]');
+      const off = (v) => v === false || v === 'false';
+      const set = {};
+      if (flags.cli !== undefined || flags.w3bs) set.cli = off(flags.cli) ? false : { ...(typeof flags.cli === 'string' && { script: flags.cli }), ...(flags.w3bs && { w3bs: flags.w3bs }) };
+      if (flags.mcp !== undefined || flags['mcp-stdio']) set.mcp = off(flags.mcp) ? false : { ...(typeof flags.mcp === 'string' && { url: flags.mcp }), ...(flags['mcp-stdio'] && { stdio: flags['mcp-stdio'] }) };
+      if (flags.api !== undefined) set.api = off(flags.api) ? false : { base: flags.api, ...(flags.openapi && { openapi: flags.openapi }), ...(flags.docs && { docs: flags.docs }) };
+      const r = Object.keys(set).length ? await api.updateApp(auth, rest[0], { surfaces: set }) : await api.getApp(auth, rest[0]);
+      out(r.app.surfaces, [`${r.app.slug}: ${surfaceTags(r.app)}`, ...surfaceLines(r.app)].join('\n'));
       return 0;
     }
     case 'info':

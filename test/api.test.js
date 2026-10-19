@@ -425,6 +425,63 @@ d('store end to end', () => {
     expect(JSON.parse(mine.result.content[0].text).verified).toBe(true);
   });
 
+  test('surfaces: the publisher sets CLI / MCP / API; filters, pages, collections and MCP follow', async () => {
+    expect((await anon('GET', '/apps?surface=tui')).status).toBe(400);
+    expect((await call('PATCH', '/apps/notes', { surfaces: { cli: { script: 'http://notes.example/i.sh' } } })).status).toBe(400);
+    const set = await call('PATCH', '/apps/notes', {
+      surfaces: { cli: { script: 'https://notes.example/install.sh', w3bs: 'notes.example/notes', commands: ['notes'] }, mcp: { url: 'https://notes.example/mcp' } },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body.app.surfaces.cli.install).toBe('curl -fsSL https://notes.example/install.sh | sh');
+    expect(set.body.app.surfaces.cli.w3bs_install).toBe('w3bs install notes.example/notes');
+    expect((await anon('GET', '/apps?surface=cli')).body.apps.map((a) => a.slug)).toEqual(['notes']);
+    expect((await anon('GET', '/apps?surface=api')).body.total).toBe(0);
+    const counts = Object.fromEntries((await anon('GET', '/surfaces')).body.surfaces.map((s) => [s.key, s.apps]));
+    expect(counts.cli).toBe(1);
+    expect(counts.mcp).toBe(1);
+    expect(counts.pwa).toBeGreaterThanOrEqual(2);
+
+    const page = await (await app.request('/apps/notes')).text();
+    expect(page).toContain('curl -fsSL https://notes.example/install.sh | sh');
+    expect(page).toContain('w3bs install notes.example/notes');
+    expect(page).toContain('claude mcp add --transport http notes https://notes.example/mcp');
+    expect(await (await app.request('/apps?surface=mcp')).text()).toContain('/apps/notes');
+
+    const script = await app.request('/collections/clis/install.sh');
+    expect(script.headers.get('content-type')).toContain('shellscript');
+    expect(await script.text()).toContain("run 'notes' 'https://notes.example/install.sh' sh");
+    expect(await (await app.request('/collections/mcp-servers/mcp.json')).json()).toEqual({ mcpServers: { notes: { type: 'http', url: 'https://notes.example/mcp' } } });
+    expect((await app.request('/collections/nope')).status).toBe(404);
+    const listing = await (await app.request('/collections')).text();
+    expect(listing).toContain('/collections/clis');
+    const colPage = await (await app.request('/collections/mcp-servers')).text();
+    expect(colPage).toContain('data-col-app="notes"');
+    expect((await anon('GET', '/collections/clis')).body.collection.install.cli).toBe('curl -fsSL http://localhost:3999/collections/clis/install.sh | sh');
+
+    const rpc = async (body) => (await app.request('/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+    const found = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_apps', arguments: { surface: 'mcp' } } });
+    expect(JSON.parse(found.result.content[0].text).apps[0].surfaces.mcp.url).toBe('https://notes.example/mcp');
+    const cols = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_collections', arguments: {} } });
+    expect(JSON.parse(cols.result.content[0].text).some((c) => c.slug === 'clis')).toBe(true);
+
+    // Detection never overrides the publisher: a probe that finds an API adds it, and a hidden CLI stays hidden.
+    await call('PATCH', '/apps/notes', { surfaces: { cli: false } });
+    const { runSurfaceProbe } = await import('../apps/web/src/daemon.js');
+    await db()`update apps set surfaces_checked_at = null`;
+    const r = await runSurfaceProbe({
+      catalog: [],
+      detectFn: async ({ origin }) => ({ cli: { install: `curl -fsSL ${origin}/install.sh | sh`, script: `${origin}/install.sh` }, api: { base: `${origin}/api/v1`, openapi: null, docs: null }, mcp: null }),
+    });
+    expect(r.checked).toBeGreaterThanOrEqual(2);
+    const notes = (await anon('GET', '/apps/notes')).body.app.surfaces;
+    expect(notes.cli).toBeNull();
+    expect(notes.api.base).toContain('/api/v1');
+    expect(notes.mcp.url).toBe('https://notes.example/mcp');
+    expect((await anon('GET', '/apps?surface=cli')).body.apps.map((a) => a.slug)).not.toContain('notes');
+    await call('PATCH', '/apps/notes', { surfaces: { cli: null } });
+    expect((await anon('GET', '/apps/notes')).body.app.surfaces.cli.script).toContain('/install.sh');
+  });
+
   test('the inspector refuses private addresses outside tests', async () => {
     inspectMod.setAllowLocal(false);
     try {
