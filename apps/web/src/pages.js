@@ -88,19 +88,15 @@ ${
 }
 <main>${body}</main>
 <footer class="foot"><div class="wrap">
-  <div>
-    <a class="brand" href="/" style="font-size:20px">${MARK.replace('<svg', '<svg style="width:26px;height:26px"')}<span>pwamart<b>.</b></span></a>
-    <p style="max-width:340px">The app store for the open web. Built by <a href="https://profullstack.com">Profullstack</a>.</p>
-  </div>
+  <span>&copy; ${new Date().getFullYear()} Profullstack, Inc.</span>
   <nav>
-    <a href="/apps">Browse</a><a href="/publishers">Publishers</a><a href="/developers">Developers</a><a href="/pricing">Pricing</a>
-    <a href="/developers#api">API</a><a href="/developers#mcp">MCP</a><a href="/developers#cli">CLI &amp; TUI</a>
-    <a href="/featured">Get featured</a><a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a>
-    <a href="/llms.txt">llms.txt</a><a href="https://github.com/profullstack/pwamart.com">GitHub</a>
+    <a href="/developers">Developers</a><a href="/developers#api">API</a><a href="/pricing">Pricing</a>
+    <a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
+    <a href="https://github.com/profullstack/pwamart.com">GitHub</a>
   </nav>
 </div></footer>
-${siteFooter()}
 <script src="/assets/store.js" type="module"></script>
+${siteFooter()}
 </body>
 </html>`;
 }
@@ -396,8 +392,8 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${offlineChip}
     ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), ...(feature ? { feature } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
-  <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
   ${list.apps.length ? adSlot('browse') : ''}
+  <section class="block" style="padding-top:0">${grid(list.apps, q ? 'Nothing matches that search.' : 'No apps in this category yet.')}</section>
   <div class="pager">
     ${offset > 0 ? `<a class="btn" href="${e(qs(Math.max(0, offset - limit)))}">← Previous</a>` : ''}
     ${offset + limit < list.total ? `<a class="btn" href="${e(qs(offset + limit))}">Next →</a>` : ''}
