@@ -89,7 +89,7 @@ ${
 <main>${body}</main>
 <footer class="foot"><div class="wrap">
   <span>&copy; ${new Date().getFullYear()} Profullstack, Inc.</span>
-  <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav>
+  <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav><a class="builtindie-badge" href="https://built.indie.pit.world/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://built.indie.pit.world/for.svg?site=https://pwamart.com/" alt="Listed on built.indie" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a>
   <nav>
     <a href="/developers">Developers</a><a href="/developers#api">API</a><a href="/pricing">Pricing</a>
     <a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
