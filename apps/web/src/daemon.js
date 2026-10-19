@@ -204,10 +204,12 @@ addJob('feature-backfill', 2 * 60_000, async () => {
 
 /**
  * Which listings are also a CLI, an API or an MCP server (surfaces.js). Never-probed
- * listings first, then each one again after a week. A few per turn, one site at a
- * time; a site that is down keeps what it had and is tried again next week.
+ * listings first, then each one again after a week. A batch per turn, its sites
+ * probed side by side (different hosts, about ten small requests each), so one dead
+ * site's timeouts do not hold up the rest.
+ * A site that is down keeps what it had and is tried again next week.
  */
-export async function runSurfaceProbe({ batch = 6, detectFn, catalog, sql = db() } = {}) {
+export async function runSurfaceProbe({ batch = 8, detectFn, catalog, sql = db() } = {}) {
   const s = await import('./surfaces.js');
   const detect = detectFn ?? s.detectSurfaces;
   const entries = catalog ?? (await s.w3bsCatalog());
@@ -217,17 +219,19 @@ export async function runSurfaceProbe({ batch = 6, detectFn, catalog, sql = db()
       and (surfaces_checked_at is null or surfaces_checked_at < now() - interval '7 days')
     order by surfaces_checked_at nulls first, published_at nulls last limit ${batch}`;
   const found = { cli: 0, api: 0, mcp: 0 };
-  for (const a of due) {
-    try {
-      const d = await detect({ origin: a.origin, catalog: entries, slug: a.slug });
-      for (const k of Object.keys(found)) if (d[k]) found[k]++;
-      const keys = s.keysOf(s.mergeSurfaces(d, a.surfaces_set));
-      await sql`update apps set surfaces = ${sql.json(d)}, surface_keys = ${keys}::text[], surfaces_checked_at = now() where id = ${a.id}`;
-    } catch (err) {
-      console.error(`[daemon] surface-probe ${a.origin}: ${err?.message ?? err}`);
-      await sql`update apps set surfaces_checked_at = now() where id = ${a.id}`;
-    }
-  }
+  await Promise.all(
+    due.map(async (a) => {
+      try {
+        const d = await detect({ origin: a.origin, catalog: entries, slug: a.slug });
+        for (const k of Object.keys(found)) if (d[k]) found[k]++;
+        const keys = s.keysOf(s.mergeSurfaces(d, a.surfaces_set));
+        await sql`update apps set surfaces = ${sql.json(d)}, surface_keys = ${keys}::text[], surfaces_checked_at = now() where id = ${a.id}`;
+      } catch (err) {
+        console.error(`[daemon] surface-probe ${a.origin}: ${err?.message ?? err}`);
+        await sql`update apps set surfaces_checked_at = now() where id = ${a.id}`;
+      }
+    }),
+  );
   return { checked: due.length, ...found };
 }
 
