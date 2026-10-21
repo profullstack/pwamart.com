@@ -14,8 +14,8 @@
         "@profullstack/notifications": "^0.1.4",
         "@profullstack/pwamart-mcp": "workspace:*",
         "@profullstack/stack": "^0.4.0",
-        "@profullstack/throttle": "^0.3.2",
-        "@profullstack/x402-gateway": "^0.10.1",
+        "@profullstack/throttle": "^0.3.3",
+        "@profullstack/x402-gateway": "^0.11.0",
         "@pwamart/db": "workspace:*",
         "@pwamart/payments": "workspace:*",
         "@simplewebauthn/browser": "^13",
@@ -25,7 +25,7 @@
     },
     "packages/cli": {
       "name": "@profullstack/pwamart",
-      "version": "0.6.0",
+      "version": "0.8.0",
       "bin": {
         "pwamart": "./bin/pwamart.mjs",
       },
@@ -44,7 +44,7 @@
     },
     "packages/mcp": {
       "name": "@profullstack/pwamart-mcp",
-      "version": "0.6.0",
+      "version": "0.8.0",
       "bin": {
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },
@@ -114,9 +114,9 @@
 
     "@profullstack/stack": ["@profullstack/stack@0.4.0", "", { "dependencies": { "@profullstack/emailer": "^1.0.1", "@profullstack/form-guard": "^0.1.1", "@profullstack/referrals": "^0.1.0" }, "peerDependencies": { "@supabase/ssr": ">=0.5.0", "next": ">=13.0.0", "react": ">=18.0.0" }, "optionalPeers": ["@supabase/ssr", "next", "react"] }, "sha512-8iQzEiPp9UbrW7qqF5nHZJhQr3lOXQvMDQf+HyMWbZd4uEiYlSaKEbgBpKk7LM4/CADLZPNO10t5ovBqBJ9V9A=="],
 
-    "@profullstack/throttle": ["@profullstack/throttle@0.3.2", "", { "dependencies": { "@profullstack/x402-gateway": "^0.6.0 || ^0.7.0 || ^0.8.0 || ^0.9.0 || ^0.10.0" } }, "sha512-53bE30J/vjuuahKiBveB3oKL+L03ufNGwmmSk9yfQwInfmC3xr9I7DvDkPti/wwAuk6V6bcfUqeazgNGLfe8rQ=="],
+    "@profullstack/throttle": ["@profullstack/throttle@0.3.3", "", { "dependencies": { "@profullstack/x402-gateway": "^0.6.0 || ^0.7.0 || ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0" } }, "sha512-GigeMGXS/1T2UseW0gYvFbxgMuo89/bhW92xMPv/IKAR860mhCdo2G8U4Schciw27seDXVGNErWpTSUC2zGoiA=="],
 
-    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.10.1", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-YF/P3GRbb/8dAHIhDT2R7yHSAK+olrT4/zAWLzf5aF9Na8o1/rJCdP+k6UnGepyQ9RQ2qL9p5diRVwb18Zt4VA=="],
+    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.11.0", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-Lfrz+SRTwQZfcoCaVtaaMNPJx74Lp/5oyS7vJJAEuJmH1TjBzhE7dWquISkj1p42oc+VW5I9xH9p7YhEKqmr4Q=="],
 
     "@pwamart/db": ["@pwamart/db@workspace:packages/db"],
 
