@@ -378,7 +378,6 @@ export function homePage({ featured, top, fresh, counts, stats, features = {}, s
       : ''
   }
   <section class="block"><div class="block-head"><h2>Top apps</h2><a href="/apps?sort=top">See all →</a></div>${grid(top)}</section>
-  ${adSlot('home')}
   <section class="block"><div class="block-head"><h2>New this week</h2><a href="/apps?sort=new">See all →</a></div>${grid(fresh)}</section>
 
   <section class="block">
