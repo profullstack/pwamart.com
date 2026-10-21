@@ -281,7 +281,7 @@ async function submit() {
 
 /* ------------------------------------------------------------ app detail -- */
 
-async function appDetail(slug) {
+async function appDetail(slug, note = '') {
   const { app, verify } = await api(`/apps/${encodeURIComponent(slug)}/manage`);
   const step = !app.verified ? 2 : app.status !== 'published' ? 3 : null;
   view.innerHTML = `
@@ -299,7 +299,7 @@ async function appDetail(slug) {
     }
 
     <div class="panel" style="margin-bottom:18px">
-      <div class="row" style="justify-content:space-between"><h3>Installability · ${app.score ?? '–'}%</h3><button class="btn sm" id="refresh">Re-check manifest</button></div>
+      <div class="row" style="justify-content:space-between"><h3>Installability · ${app.score ?? '–'}%</h3><div class="row"><span id="rmsg">${note}</span><button class="btn sm" id="refresh">Re-check manifest</button></div></div>
       ${checksList(app.checks)}
     </div>
 
@@ -338,12 +338,21 @@ async function appDetail(slug) {
       msg('#vmsg', errBox(err));
     }
   });
+  // A re-check takes a few seconds and often lands on the same score; say so either way.
   act('#refresh', async () => {
+    const button = $('#refresh');
+    button.disabled = true;
+    msg('#rmsg', '<span class="muted">Checking…</span>');
     try {
-      await api(`/apps/${slug}/refresh`, { method: 'POST' });
-      appDetail(slug);
+      const r = await api(`/apps/${slug}/refresh`, { method: 'POST' });
+      const score = r.app?.score ?? '–';
+      const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const was = app.score ?? '–';
+      const change = score === was ? `still ${score}%` : `${was}% → ${score}%`;
+      appDetail(slug, `<span class="ok-msg">Checked ${esc(at)}: ${esc(change)}</span>`);
     } catch (err) {
-      msg('#pmsg', errBox(err));
+      button.disabled = false;
+      msg('#rmsg', errBox(err));
     }
   });
   for (const a of ['publish', 'unlist', 'unpublish'])
