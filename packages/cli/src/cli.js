@@ -362,7 +362,7 @@ export async function main(argv = process.argv.slice(2)) {
         r,
         [
           st.featured ? `${rest[0]} is featured${st.featured_until ? ` until ${String(st.featured_until).slice(0, 10)}; this adds ${r.days} days` : ''}.` : '',
-          `Pay $${r.price_cents / 100} in crypto to feature ${rest[0]} for ${r.days} days and in the next newsletter:`,
+          `Pay $${r.price_cents / 100} in any major coin or PayPal to feature ${rest[0]} for ${r.days} days and in the next newsletter:`,
           `  ${r.checkout_url}`,
         ]
           .filter(Boolean)

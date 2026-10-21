@@ -755,7 +755,7 @@ export function pricingPage({ stats, net = null }) {
   <section class="block" style="padding-top:48px;text-align:center">
     <div class="eyebrow">Pricing for publishers</div>
     <h1 style="margin:10px auto 14px;max-width:820px">Installing is always free. Listing starts free too.</h1>
-    <p class="lede" style="margin:0 auto">Pay by the year in crypto through CoinPay. No cut of your sales, ever: your app takes its own payments.</p>
+    <p class="lede" style="margin:0 auto">Pay by the year through CoinPay, in any major coin or PayPal. No cut of your sales, ever: your app takes its own payments.</p>
   </section>
   <div class="plans">
     <div class="plan">
@@ -779,7 +779,7 @@ export function pricingPage({ stats, net = null }) {
   </div>
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Limits</div><h3>Counted per account</h3><p>Publishers and apps across every org you created. A lapsed plan never takes a live listing down; it only stops new ones.</p></div>
-    <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL and more. One payment adds a year.</p></div>
+    <div class="tile"><div class="k">Payments</div><h3>CoinPay</h3><p>USDC, BTC, ETH, SOL, PayPal and more. One payment adds a year.</p></div>
     <div class="tile"><div class="k">Get featured</div><h3>$19, one time</h3><p>A week on the home page's Featured row and at the top of the store, a slot in the next newsletter, and a free ad across our network. <a href="/advertise">See the reach →</a></p></div>
     <div class="tile"><div class="k">Your app</div><h3>Keep 100%</h3><p>pwamart only lists and installs. Subscriptions inside your app are between you and your users.</p></div>
   </div></section>
@@ -895,14 +895,14 @@ export function featuredPage({ stats, net = null, featured = [], subscribers = 0
   <section class="block" style="padding-top:48px">
     <div class="eyebrow">For publishers</div>
     <h1 style="margin:10px 0 14px">Get featured on pwamart and in our newsletter for ${price}.</h1>
-    <p class="lede">One payment, in crypto through CoinPay. Your app gets the home page's Featured row and the top of the store for ${days} days, a spot at the top of the next pwamart newsletter, and a free ad across our CrawlProof ad network for the same ${days} days.</p>
+    <p class="lede">One payment through CoinPay, in any major coin or PayPal. Your app gets the home page's Featured row and the top of the store for ${days} days, a spot at the top of the next pwamart newsletter, and a free ad across our CrawlProof ad network for the same ${days} days.</p>
     <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn primary" href="/console/feature">Feature an app for ${price}</a><a class="btn" href="/console/submit">List an app first</a></p>
   </section>
   <section class="block"><div class="bigrow">
     <div class="tile"><div class="k">Home page</div><h3>${days} days</h3><p>The Featured row on pwamart.com, and first place in the default sort. Buy again while it runs and the time adds on.</p></div>
     <div class="tile"><div class="k">Newsletter</div><h3>The next issue</h3><p>Featured apps lead the issue, ahead of the week's new listings${subscribers ? `, to ${e(subscribers)} confirmed readers` : ''}.</p></div>
     <div class="tile"><div class="k">Ad network</div><h3>A free campaign</h3><p>A CrawlProof ad for your app across our sites for the same ${days} days${net?.sites ? ` (${e(net.sites)} sites, ${e(compact(net.impressions))} ad impressions a month)` : ''}. We write the creatives.</p></div>
-    <div class="tile"><div class="k">Payment</div><h3>${price} in crypto</h3><p>USDC, BTC, ETH, SOL and more through CoinPay. It goes live the moment the payment settles.</p></div>
+    <div class="tile"><div class="k">Payment</div><h3>${price}, once</h3><p>Any major coin (USDC, BTC, ETH, SOL and more) or PayPal, through CoinPay. It goes live the moment the payment settles.</p></div>
   </div></section>
   ${reachTiles(net)}
   <section class="block">
@@ -922,7 +922,7 @@ export function featuredPage({ stats, net = null, featured = [], subscribers = 0
 </div>`;
   return layout({
     title: `Get featured for ${price}`,
-    description: `Feature your web app on pwamart's home page for ${days} days, in the next pwamart newsletter and across our ad network for ${price}, paid in crypto.`,
+    description: `Feature your web app on pwamart's home page for ${days} days, in the next pwamart newsletter and across our ad network for ${price}, paid in any major coin or PayPal.`,
     path: '/featured',
     body,
     stats,
@@ -991,7 +991,7 @@ export function advertisePage({ stats, net = null, subscribers = 0, priceCents =
     <div class="tile"><div class="k">Home page</div><h3>${days} days</h3><p>The Featured row on pwamart.com and first place in the default sort, in every client.</p></div>
     <div class="tile"><div class="k">Newsletter</div><h3>The next issue</h3><p>Featured apps lead the issue${subscribers ? `, to ${e(subscribers)} confirmed readers` : ''}.</p></div>
     <div class="tile"><div class="k">Ad network</div><h3>A free campaign</h3><p>A CrawlProof ad for your app across our sites for the same ${days} days. We write the creatives; it costs nothing extra.</p></div>
-    <div class="tile"><div class="k">Payment</div><h3>${price} in crypto</h3><p>USDC, BTC, ETH, SOL and more through CoinPay. Live the moment it settles.</p></div>
+    <div class="tile"><div class="k">Payment</div><h3>${price}, once</h3><p>Any major coin (USDC, BTC, ETH, SOL and more) or PayPal, through CoinPay. Live the moment it settles.</p></div>
   </div></section>
   ${
     top.length

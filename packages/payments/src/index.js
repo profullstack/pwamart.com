@@ -16,16 +16,22 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * fashion -- it is what lets `cp packages/payments/src/index.js` be the entire port
  * between siblings, now and every time this changes again.
  *
- * The module is also deliberately narrow. It can start a payment, verify a
+ * The module is also deliberately narrow. It can start a checkout, verify a
  * webhook, and settle one. It knows nothing about what is being sold and nothing
  * about how much of it there is. Anything brand-specific arrives as a callback
  * from the caller, which is what keeps "what is for sale" out of a file that is
  * copied around.
+ *
+ * Version 2 (2026-10-21): a checkout is a CoinPay hosted checkout SESSION
+ * (POST /api/checkout/sessions). The buyer picks any coin the business holds a
+ * wallet for, or PayPal, on CoinPay's page; this file no longer picks a chain.
+ * Every session carries who paid (customer_email, account_id) and for which site
+ * (property), and CoinPay copies those onto every webhook.
  */
 
 /* ------------------------------------------------------------------- wiring -- */
 
-/** @type {{sql: Function, coinpay: object, siteUrl: string} | null} */
+/** @type {{sql: Function, coinpay: object, siteUrl: string, property?: string} | null} */
 let deps = null;
 
 /**
@@ -38,7 +44,10 @@ let deps = null;
  * module imported config first and the signature tests became a coin flip decided
  * by the rest of the suite.
  *
- * @param {{sql: Function, coinpay: object, siteUrl: string}} injected
+ * `property` is the site hostname CoinPay files every payment under. Omitted, it is
+ * `coinpay.property` when the config carries one, else the hostname of `siteUrl`.
+ *
+ * @param {{sql: Function, coinpay: object, siteUrl: string, property?: string}} injected
  */
 export function configurePayments(injected) {
   deps = injected;
@@ -58,6 +67,40 @@ export function paymentsEnabled() {
   return Boolean(deps?.coinpay?.enabled);
 }
 
+/** The hostname CoinPay records this site's payments under. */
+export function paymentProperty() {
+  const { coinpay, siteUrl, property } = need();
+  const explicit = String(property ?? coinpay?.property ?? '').trim();
+  if (explicit) return hostOf(explicit);
+  const host = hostOf(String(siteUrl ?? ''));
+  if (!host)
+    throw new Error('payments need a property: pass siteUrl or property to configurePayments');
+  return host;
+}
+
+function hostOf(value) {
+  const v = String(value).trim();
+  if (!v) return '';
+  try {
+    return new URL(/^[a-z]+:\/\//i.test(v) ? v : `https://${v}`).hostname.toLowerCase();
+  } catch {
+    return v.toLowerCase();
+  }
+}
+
+function baseUrlOf(coinpay) {
+  return String(coinpay.baseUrl || 'https://coinpayportal.com')
+    .replace(/\/+$/, '')
+    .replace(/\/api$/, '');
+}
+
+const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]+$/;
+
+/** Same rule CoinPay applies, so a bad address fails here and not at CoinPay. */
+export function isValidEmail(value) {
+  return typeof value === 'string' && value.length <= 320 && EMAIL_RE.test(value.trim());
+}
+
 /**
  * Constant-time hex compare.
  *
@@ -75,7 +118,7 @@ function safeEqualHex(a, b) {
 /* ----------------------------------------------------------------- checkout -- */
 
 /**
- * Start a payment and write it down as pending.
+ * Open a hosted checkout session and write it down as pending.
  *
  * Nothing here knows what is being bought. `description` is what the buyer reads
  * on the checkout page and `metadata` is echoed back on the webhook -- and that
@@ -83,109 +126,101 @@ function safeEqualHex(a, b) {
  * empty metadata cannot be attributed to anything and is unrecoverable without a
  * human.
  *
- * The pending row is inserted BEFORE the buyer leaves. A webhook can arrive before
- * the redirect completes, and settling a payment we have no record of would mean
- * dropping money that genuinely arrived.
+ * WHO PAID is required, not optional: CoinPay refuses a session without
+ * `customer_email` and `account_id`. The email comes from `email` or the signed-in
+ * `user.email`; the account is `accountId`, else `user.id`, else (a guest with no
+ * account) the email itself.
+ *
+ * The pending row is inserted BEFORE the buyer leaves, under the SESSION id
+ * (cs_...). A webhook can arrive before the redirect completes, and settling a
+ * payment we have no record of would mean dropping money that genuinely arrived.
+ * The webhook names both the underlying payment and the session, and settlement
+ * matches either, so rows written by the old per-coin checkout still settle.
+ *
+ * `blockchain`, `paymentMethod` and `payTo` are no longer read: the buyer picks
+ * the coin (or PayPal) on CoinPay's page, and the payee is always the business's
+ * own wallet for that coin. Old callers that still pass them keep working.
  *
  * @param {object} args
- * @param {{id: string}} args.user
+ * @param {{id?: string|number, email?: string} | null} [args.user]
+ * @param {string} [args.email]  buyer email; defaults to user.email
+ * @param {string} [args.accountId]  defaults to user.id, then the email
  * @param {number} args.amountCents
  * @param {string} [args.currency]
  * @param {string} args.description  shown to the buyer on the checkout page
- * @param {Record<string,string>} args.metadata  echoed back on the webhook
- * @param {string} args.blockchain  chain to settle on, e.g. BTC or ETH
- * @param {string} [args.paymentMethod]  crypto (default), card, or both
- * @param {string} [args.payTo]  override the payee; omit to use the business wallet
- * @param {string} [args.successUrl]
+ * @param {Record<string,string>} [args.metadata]  echoed back on the webhook
+ * @param {string} [args.successUrl]  may contain {CHECKOUT_SESSION_ID}
  * @param {string} [args.cancelUrl]
- * @returns {Promise<{checkoutUrl: string, paymentRef: string}>}
+ * @param {number} [args.expiresInMinutes]  15-120, default 60
+ * @returns {Promise<{checkoutUrl: string, paymentRef: string, sessionId: string}>}
  */
 export async function createCheckout({
-  user,
+  user = null,
+  email,
+  accountId,
   amountCents,
   currency = 'USD',
   description,
   metadata = {},
-  blockchain,
-  paymentMethod = 'crypto',
-  payTo,
   successUrl,
   cancelUrl,
+  expiresInMinutes = 60,
 }) {
   const { sql, coinpay } = need();
   if (!coinpay.enabled) throw new Error('CoinPay is not configured');
-  if (!user?.id) throw new Error('a checkout needs a buyer');
-  if (!Number.isFinite(amountCents) || amountCents < 0) throw new Error('bad amount');
+  if (!Number.isFinite(amountCents) || amountCents <= 0) throw new Error('bad amount');
 
-  /*
-   * A crypto payment has to name the chain it settles on.
-   *
-   * The upstream refuses without it -- "Invalid or missing cryptocurrency type" --
-   * so omitting it does not settle somewhere sensible by default, it simply fails
-   * at the moment a buyer presses pay. Named here so the failure is at the call
-   * site instead.
-   */
-  const needsCrypto = paymentMethod !== 'card';
-  if (needsCrypto && !blockchain) throw new Error('a crypto checkout needs a blockchain');
+  const buyerEmail = String(email ?? user?.email ?? '').trim();
+  if (!isValidEmail(buyerEmail)) throw new Error("a checkout needs the buyer's email");
+  const userId = user?.id ?? null;
+  const account = String(accountId ?? userId ?? buyerEmail).trim();
+  if (!account) throw new Error('a checkout needs a buyer account');
 
-  /*
-   * WHERE THE MONEY GOES: omit payTo, and the upstream resolves it.
-   *
-   * `merchant_wallet_address` is an OVERRIDE, not a requirement. Left out, the
-   * upstream forwards to the business's own wallet for that chain, falling back to
-   * the account-global one -- and if neither exists it refuses the payment with
-   * "No <coin> wallet configured for this business" rather than settling anywhere.
-   * That is the correct behaviour and it is per-chain, which a single address in
-   * configuration could never be: a BTC address is not a payee for an ETH payment.
-   *
-   * So the payee is attached to the BUSINESS (import the account-global wallets
-   * once) and not carried in every call. The override exists for the genuinely
-   * third-party case -- forwarding the net to somebody who is not the business --
-   * and the upstream records who authorised it.
-   */
+  const property = paymentProperty();
+  const base = baseUrlOf(coinpay);
 
-  const res = await fetch(`${coinpay.baseUrl}/api/payments/create`, {
+  // Strings only: metadata is echoed through JSON and compared as text.
+  const meta = {};
+  for (const [k, v] of Object.entries(metadata ?? {})) {
+    if (v !== undefined && v !== null) meta[k] = String(v);
+  }
+  if (userId !== null) meta.user_id = String(userId);
+  meta.email = buyerEmail;
+  meta.property = property;
+
+  const res = await fetch(`${base}/api/checkout/sessions`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${coinpay.apiKey}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      business_id: coinpay.businessId,
       amount: amountCents / 100,
       currency,
-      blockchain,
-      payment_method: paymentMethod,
-      ...(payTo ? { merchant_wallet_address: payTo } : {}),
       description,
-      // Always carries the buyer. A caller may add whatever else identifies the
-      // purchase; settleWebhook hands the whole object back to the grant callback.
-      metadata: { ...metadata, user_id: user.id },
+      customer_email: buyerEmail,
+      account_id: account,
+      property,
+      metadata: meta,
       success_url: successUrl,
       cancel_url: cancelUrl,
+      expires_in_minutes: Math.min(120, Math.max(15, Math.round(expiresInMinutes))),
     }),
     signal: AbortSignal.timeout(20_000),
   });
 
   if (!res.ok) throw new Error(`coinpay ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const body = await res.json();
-
-  /*
-   * The payment is nested, and the id is what the webhook will echo.
-   *
-   * The response is { success, payment: {...}, usage } -- reading `body.id` finds
-   * nothing, so the pending row would be written under an undefined reference and
-   * the webhook could never match it.
-   */
-  const payment = body?.payment ?? body;
-  const ref = payment?.id ?? payment?.payment_id;
-  if (!ref) throw new Error('coinpay returned no payment reference');
+  const sessionId = body?.id;
+  if (!sessionId || !String(sessionId).startsWith('cs_')) {
+    throw new Error('coinpay returned no checkout session');
+  }
 
   await sql`
     insert into payments ${sql({
-      user_id: user.id,
+      user_id: userId,
       provider: 'coinpay',
-      provider_ref: ref,
+      provider_ref: sessionId,
       amount_cents: amountCents,
       currency,
       status: 'pending',
@@ -195,15 +230,35 @@ export async function createCheckout({
   `;
 
   /*
-   * Where to send the buyer.
-   *
-   * A card payment comes back with a Stripe session URL. A crypto one does not --
-   * it comes back with an address and an amount, and the page that renders those
-   * is the hosted checkout at /pay/<id>. There is no generic `checkout_url` field;
-   * reading one is how this returned undefined and sent buyers nowhere.
+   * Only ever send a buyer to CoinPay's own origin. The URL comes from CoinPay,
+   * but a redirect is the one thing here an attacker would want to steer, so it is
+   * rebuilt from our own config when it points anywhere else.
    */
-  const checkoutUrl = payment?.stripe_checkout_url ?? `${coinpay.baseUrl}/pay/${ref}`;
-  return { checkoutUrl, paymentRef: ref };
+  let checkoutUrl = `${base}/checkout/${encodeURIComponent(sessionId)}`;
+  try {
+    const u = new URL(String(body.url), base);
+    if (u.origin === new URL(base).origin) checkoutUrl = u.toString();
+  } catch {
+    // keep the one built from config
+  }
+  return { checkoutUrl, paymentRef: sessionId, sessionId };
+}
+
+/**
+ * Read a checkout session back (status, and the payment ids once one exists).
+ * Used by a return page that wants to say "paid" before the webhook lands; never
+ * a substitute for the webhook, which is what grants.
+ */
+export async function getCheckoutSession(sessionId) {
+  const { coinpay } = need();
+  if (!/^cs_[A-Za-z0-9]+$/.test(String(sessionId ?? ''))) return null;
+  const res = await fetch(`${baseUrlOf(coinpay)}/api/checkout/sessions/${sessionId}`, {
+    headers: { authorization: `Bearer ${coinpay.apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return null;
+  const body = await res.json().catch(() => null);
+  return body?.session ?? body;
 }
 
 /* ------------------------------------------------------------------ webhook -- */
@@ -251,45 +306,69 @@ export function verifyWebhook({ rawBody, signatureHeader, toleranceSeconds = 300
  * A webhook fires for failures and cancellations too, and granting on any VERIFIED
  * webhook is the mistake this set exists to prevent: the signature proves the
  * message is genuine, never that it says yes.
+ *
+ * `forwarded` is here because CoinPay sends TWO events for one payment --
+ * payment.confirmed, then payment.forwarded once the funds have gone on to the
+ * merchant wallet -- and forwarded is strictly later than confirmed, so it is paid
+ * by definition. Leaving it out is not a harmless omission: CoinPay's durable
+ * retry queue (webhook_deliveries, backing off for about a day) is where a failed
+ * payment.forwarded waits, while a failed payment.confirmed is only re-sent while
+ * the monitor still sees the payment as unsettled (about twelve minutes). A
+ * receiver that settles on confirmed alone loses a real payment for good once
+ * confirmed has failed. Both count; every grant is idempotent per payment, so
+ * receiving both grants once.
+ *
+ * The SQL below repeats this list as a literal on purpose: binding a JS array is
+ * not portable across the Postgres clients these brands run on.
  */
-const SETTLED = new Set(['paid', 'completed', 'confirmed', 'succeeded', 'settled']);
+const SETTLED = new Set(['paid', 'completed', 'confirmed', 'forwarded', 'succeeded', 'settled']);
+
+export function isSettledStatus(status) {
+  return SETTLED.has(String(status ?? '').toLowerCase());
+}
 
 /**
  * Pull the payment out of a webhook body, whichever envelope it arrived in.
  *
- * THE LIVE SHAPE IS NESTED, and this file used to read it flat. CoinPay sends:
+ * THE LIVE SHAPE IS NESTED. CoinPay sends:
  *
  *   { id: "evt_<paymentId>_<unixTs>",
  *     type: "payment.confirmed",
- *     data: { payment_id, status, amount, amount_usd, metadata, ... },
+ *     data: { payment_id, status, amount, amount_usd, metadata,
+ *             checkout_session_id, customer_email, account_id, property, ... },
  *     created_at, business_id }
  *
- * The top-level `id` is the EVENT, not the payment. Reading `payload.id`,
- * `payload.status` and `payload.metadata` -- which is what stood here -- resolved
- * the reference to `evt_...`, found no status and no metadata, and threw
- * "webhook missing metadata" on every genuine confirmation. It failed inside a
- * webhook handler, so the only symptom was that crypto payments never settled.
+ * The top-level `id` is the EVENT, not the payment. Reading the flat fields FIRST
+ * would match the event id and settle against a reference that belongs to
+ * nothing, so `data` wins wherever it exists; the flat shape stays supported
+ * because the older test-webhook sender still uses it.
  *
- * The tests did not catch it because they were written against the flat shape
- * too, which is worth remembering: a test that encodes the same wrong assumption
- * as the code confirms the bug rather than finding it. The nested shape here is
- * copied from the sender, `src/lib/webhooks/service.ts` in coinpayportal.
- *
- * Reading the flat fields FIRST would be worse than throwing: against a real
- * webhook it matches the event id and would settle against a reference that
- * belongs to nothing. So `data` wins wherever it exists, and the flat shape stays
- * supported because the older test-webhook sender still uses it.
+ * A session payment's metadata is ours plus CoinPay's checkout_session_id,
+ * customer_email, account_id and property; they are also copied to the top of
+ * `data`, and either place is read.
  *
  * @param {object} payload the parsed webhook body
- * @returns {{ref: string, status: string, meta: object, event: string}}
  */
 export function readWebhook(payload) {
   const data = payload?.data ?? payload;
-  const ref = data?.payment_id ?? data?.id;
+  const ref = data?.payment_id ?? (payload?.data ? data?.id : payload?.id) ?? null;
   const status = String(data?.status ?? '').toLowerCase();
-  const meta = data?.metadata ?? payload?.metadata ?? {};
+  const meta = { ...(data?.metadata ?? payload?.metadata ?? {}) };
+  for (const k of ['checkout_session_id', 'customer_email', 'account_id', 'property']) {
+    if (meta[k] == null && data?.[k] != null) meta[k] = data[k];
+  }
+  const sessionId = meta.checkout_session_id ?? null;
   const event = String(payload?.type ?? payload?.event ?? '');
-  return { ref, status, meta, event };
+  return {
+    ref: ref ? String(ref) : null,
+    sessionId: sessionId ? String(sessionId) : null,
+    status,
+    meta,
+    event,
+    email: meta.customer_email ?? meta.email ?? null,
+    accountId: meta.account_id ?? null,
+    property: meta.property ?? null,
+  };
 }
 
 /**
@@ -309,9 +388,14 @@ export function readWebhook(payload) {
  * Returning a falsy value aborts the grant without failing the webhook: the money
  * is recorded, the access is not given, and the caller decides what to say.
  *
+ * The row is found by the session id (checkouts opened by this version) or by the
+ * payment id (payments opened by the old per-coin checkout and still in flight).
+ * A settled row never goes back to unsettled: one session can carry several
+ * attempts (the buyer tries BTC, gives up, pays by PayPal), and the abandoned
+ * attempt expiring later must not un-pay the one that paid.
+ *
  * Idempotent by construction. `payments` is unique on (provider, provider_ref), so
- * a replayed webhook updates the same row, and any sane grant is an upsert -- see
- * the entitlement helper below.
+ * a replayed webhook updates the same row, and any sane grant is an upsert.
  *
  * @param {object} payload the parsed webhook body
  * @param {{grant?: (tx: Function, ctx: object) => Promise<any>}} [handlers]
@@ -319,19 +403,34 @@ export function readWebhook(payload) {
 export async function settleWebhook(payload, { grant } = {}) {
   const { sql } = need();
 
-  const { meta, ref, status } = readWebhook(payload);
+  const { meta, ref, sessionId, status } = readWebhook(payload);
 
-  if (!ref) throw new Error('webhook missing payment reference');
-  if (!meta.user_id) throw new Error('webhook missing metadata');
+  if (!ref && !sessionId) throw new Error('webhook missing payment reference');
+  if (!meta.user_id && !meta.account_id) throw new Error('webhook missing metadata');
+
+  const byPayment = ref ?? sessionId;
+  const bySession = sessionId ?? ref;
 
   return sql.begin(async (tx) => {
     const [payment] = await tx`
-      update payments set status = ${status || 'unknown'}, raw = ${payload}, updated_at = now()
-      where provider = 'coinpay' and provider_ref = ${ref}
-      returning id, status, amount_cents, currency
+      update payments set
+        status = case
+          when status in ('paid', 'completed', 'confirmed', 'forwarded', 'succeeded', 'settled')
+            then status
+          else ${status || 'unknown'}
+        end,
+        raw = ${payload},
+        updated_at = now()
+      where provider = 'coinpay' and (provider_ref = ${bySession} or provider_ref = ${byPayment})
+      returning id, user_id, status, amount_cents, currency
     `;
 
     if (!SETTLED.has(status)) return { settled: false, granted: false, reason: `status ${status}` };
+    // No row means no checkout of ours: nothing recorded what was charged, so there
+    // is nothing safe to grant against. Said plainly rather than handing `grant` an
+    // undefined payment -- which either threw (a 500, retried for a day) or, worse,
+    // granted with a null payment id that no unique index can dedupe on.
+    if (!payment) return { settled: false, granted: false, reason: `unknown payment ${bySession}` };
     if (!grant) return { settled: true, granted: false, reason: 'nothing to grant' };
 
     const result = await grant(tx, { meta, payment, payload });
@@ -347,9 +446,7 @@ export async function settleWebhook(payload, { grant } = {}) {
  * Grant one person access to one event, inside a caller's transaction.
  *
  * Offered as a helper rather than done automatically, because a brand may be
- * selling something that is not an event at all. Both brands have an `events`
- * table keyed by bigint, which is what makes this shape shared rather than
- * borrowed.
+ * selling something that is not an event at all.
  *
  * `on conflict do nothing`: re-buying is a no-op rather than a second charge or a
  * second row, and a replayed webhook cannot extend anybody's access.

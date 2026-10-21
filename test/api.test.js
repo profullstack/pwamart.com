@@ -961,7 +961,12 @@ d('get featured for $19 + the newsletter', () => {
   const created = [];
   // A settled CoinPay webhook for a featured purchase, as the real one arrives.
   async function payFeatured(ref, meta) {
-    const payload = JSON.stringify({ type: 'payment.confirmed', data: { payment_id: ref, status: 'confirmed', metadata: meta } });
+    // A session payment carries its own payment id; the session id rides in the metadata.
+    const session = String(ref).startsWith('cs_');
+    const data = session
+      ? { payment_id: `pay_${randomBytes(6).toString('hex')}`, status: 'confirmed', checkout_session_id: ref, metadata: { ...meta, checkout_session_id: ref } }
+      : { payment_id: ref, status: 'confirmed', metadata: meta };
+    const payload = JSON.stringify({ type: 'payment.confirmed', data });
     const t = Math.floor(Date.now() / 1000);
     const sig = createHmac('sha256', 'whsec_test').update(`${t}.${payload}`).digest('hex');
     const res = await app.request('/webhooks/coinpay', { method: 'POST', headers: { 'content-type': 'application/json', 'x-coinpay-signature': `t=${t},v1=${sig}` }, body: payload });
@@ -970,14 +975,15 @@ d('get featured for $19 + the newsletter', () => {
 
   beforeAll(async () => {
     if (!HAS_DB) return;
-    // CoinPay's create-payment endpoint, so the checkout runs for real against it.
+    // CoinPay's checkout-sessions endpoint, so the checkout runs for real against it.
     mock = Bun.serve({
       port: 0,
       async fetch(r) {
+        expect(new URL(r.url).pathname).toBe('/api/checkout/sessions');
         const b = await r.json();
         created.push(b);
-        const id = `pay_${randomBytes(6).toString('hex')}`;
-        return Response.json({ payment: { id } });
+        const id = `cs_${randomBytes(12).toString('hex')}`;
+        return Response.json({ success: true, id, url: `http://localhost:${mock.port}/checkout/${id}` }, { status: 201 });
       },
     });
     process.env.COINPAY_API_URL = `http://localhost:${mock.port}`;
@@ -1004,14 +1010,18 @@ d('get featured for $19 + the newsletter', () => {
     expect((await req(null)('POST', `/apps/${slug}/feature`)).status).toBe(401);
   });
 
-  test('checkout: $19, crypto only, the app in the metadata, back to the console', async () => {
+  test('checkout: $19 hosted session, who paid, the app in the metadata, back to the console', async () => {
     const r = await call('POST', `/apps/${slug}/feature`);
     expect(r.status).toBe(200);
     expect(r.body.price_cents).toBe(1900);
-    expect(r.body.checkout_url).toContain('/pay/');
+    expect(r.body.checkout_url).toContain('/checkout/cs_');
     const sent = created.at(-1);
     expect(sent.amount).toBe(19);
-    expect(sent.payment_method).toBe('crypto');
+    expect(sent.customer_email).toBe('erin@example.test');
+    expect(sent.account_id).toBe(String(owner.id));
+    expect(sent.property).toBeTruthy();
+    expect(sent.blockchain).toBeUndefined();
+    expect(sent.payment_method).toBeUndefined();
     expect(sent.metadata.product).toBe('featured');
     expect(sent.metadata.app_slug).toBe(slug);
     expect(sent.success_url).toContain(`/console/apps/${slug}?featured=1`);

@@ -596,7 +596,7 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /newsletter/subscribe {email}       double opt-in (public)
 
 ## Get featured
-$19, paid once in crypto: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
+$19, paid once in any major coin or PayPal: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
 for the same week; reach: ${config.siteUrl}/advertise. Newsletter: ${config.siteUrl}/newsletter
 
 ## Surfaces: PWA, CLI, API, MCP, Desktop
