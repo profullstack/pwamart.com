@@ -68,13 +68,14 @@ function surfacesOf(row) {
   return s;
 }
 
-/** Published apps per surface: { pwa: 431, cli: 40, api: 22, mcp: 9 }. */
+/** Published apps per surface: { pwa: 431, cli: 40, api: 22, mcp: 9, desktop: 3 }. */
 export async function surfaceCounts() {
   const [r] = await db()`
     select count(*)::int as pwa,
            count(*) filter (where surface_keys @> array['cli']::text[])::int as cli,
            count(*) filter (where surface_keys @> array['api']::text[])::int as api,
-           count(*) filter (where surface_keys @> array['mcp']::text[])::int as mcp
+           count(*) filter (where surface_keys @> array['mcp']::text[])::int as mcp,
+           count(*) filter (where surface_keys @> array['desktop']::text[])::int as desktop
     from apps where status = 'published'`;
   return r;
 }

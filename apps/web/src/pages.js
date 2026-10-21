@@ -272,13 +272,14 @@ export function card(app) {
 </a>`;
 }
 
-/** PWA / CLI / API / MCP: what an app can be used as. `all` also shows the ones it is not. */
-export const SURFACE_NAMES = { pwa: 'PWA', cli: 'CLI', api: 'API', mcp: 'MCP' };
+/** PWA / CLI / API / MCP / Desktop: what an app can be used as. `all` also shows the ones it is not. */
+export const SURFACE_NAMES = { pwa: 'PWA', cli: 'CLI', api: 'API', mcp: 'MCP', desktop: 'Desktop' };
 const SURFACE_TITLES = {
   pwa: 'Installs as an app from the browser',
   cli: 'Has a command line tool, installed with curl | sh',
   api: 'Has an HTTP API',
   mcp: 'Has an MCP server for AI agents',
+  desktop: 'Has a native desktop app to download',
 };
 export function surfaceFlags(app, { all = false } = {}) {
   const s = app.surfaces ?? { pwa: true };
@@ -369,7 +370,7 @@ export function homePage({ featured, top, fresh, counts, stats, features = {}, s
   }
 
   <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}
-    <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a>${['cli', 'mcp', 'api']
+    <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a>${['cli', 'mcp', 'api', 'desktop']
       .map((k) => `<a class="chip" href="/apps?surface=${k}">Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
       .join('')}</div></section>
   ${
@@ -412,7 +413,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     return `/apps?${p}`;
   };
   const keep = { ...(publisher ? { publisher: publisher.slug } : {}), ...(sort ? { sort } : {}), ...(feature ? { feature } : {}), ...(surface ? { surface } : {}) };
-  const surfaceChips = ['cli', 'mcp', 'api']
+  const surfaceChips = ['cli', 'mcp', 'api', 'desktop']
     .map((k) => `<a class="chip${surface === k ? ' on' : ''}" data-surface="${k}" href="${e(qs(0, { surf: surface === k ? null : k }))}">${surface === k ? '✕ ' : ''}Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
     .join('');
   const offlineChip = `<div class="chips" style="margin-top:12px"><a class="chip${feature === 'offline' ? ' on' : ''}" data-feature="offline" href="${e(qs(0, { feat: feature === 'offline' ? null : 'offline' }))}">${feature === 'offline' ? '✕ ' : ''}Works offline <small>${e(features.offline ?? 0)}</small></a>${surfaceChips}</div>`;
@@ -552,7 +553,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
           <dt>Website</dt><dd><a href="${e(safeUrl(app.origin))}" rel="noopener" target="_blank">${e(host)}</a></dd>
           <dt>Category</dt><dd>${e(app.category_name)}</dd>
           <dt>Opens as</dt><dd>${e(app.display ?? 'browser')}</dd>
-          <dt>Surfaces</dt><dd>${['PWA', ...['cli', 'api', 'mcp'].filter((k) => app.surfaces?.[k]).map((k) => SURFACE_NAMES[k])].join(' · ')}</dd>
+          <dt>Surfaces</dt><dd>${['PWA', ...['cli', 'api', 'mcp', 'desktop'].filter((k) => app.surfaces?.[k]).map((k) => SURFACE_NAMES[k])].join(' · ')}</dd>
           <dt>Offline</dt><dd>${app.offline ? 'Works offline' : app.offline_reason && !app.offline_reason.startsWith('not checked') ? `No (${e(app.offline_reason)})` : '–'}</dd>
           <dt>Price</dt><dd>Free to install</dd>
           ${app.updated_at ? `<dt>Checked</dt><dd>${e(new Date(app.checked_at ?? app.updated_at).toISOString().slice(0, 10))}</dd>` : ''}
@@ -588,7 +589,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
   });
 }
 
-/** CLI, MCP and API instructions for the surfaces an app has; a note for its publisher about the rest. */
+/** CLI, MCP, API and desktop instructions for the surfaces an app has; a note for its publisher about the rest. */
 export function surfaceInstructions(app) {
   const s = app.surfaces ?? {};
   const one = (mcp) => [{ slug: app.slug, surfaces: { mcp } }];
@@ -625,9 +626,19 @@ export function surfaceInstructions(app) {
         ${docs ? `<div><b>Hand the docs to an agent</b>${cmdLine(`curl -fsSL ${docs}`, 'Copy the docs command')}</div>` : ''}
       </div>`);
   }
-  const missing = ['cli', 'api', 'mcp'].filter((k) => !s[k]).map((k) => SURFACE_NAMES[k]);
+  if (s.desktop) {
+    const d = s.desktop;
+    const page = safeUrl(d.page);
+    const files = (d.downloads ?? []).map((x) => ({ label: x.label, url: safeUrl(x.url) })).filter((x) => x.url);
+    out.push(`<h3 class="surf-head"><span class="tag surf s-desktop">Desktop</span> On your computer</h3>
+      <div class="surfaces panel">
+        ${page ? `<div><b><a href="${e(page)}" rel="noopener nofollow" target="_blank">Download the desktop app ↗</a></b> · the publisher's own downloads</div>` : ''}
+        ${files.length ? `<div><b>${page ? 'Or pick yours' : 'Downloads'}</b><ul class="downloads">${files.map((x) => `<li><a href="${e(x.url)}" rel="noopener nofollow">${e(x.label || x.url)}</a></li>`).join('')}</ul></div>` : ''}
+      </div>`);
+  }
+  const missing = ['cli', 'api', 'mcp', 'desktop'].filter((k) => !s[k]).map((k) => SURFACE_NAMES[k]);
   if (missing.length)
-    out.push(`<p class="muted" style="font-size:13px;margin:10px 0 0">No ${missing.join(', ')} found for this app. Publisher? Serve <code class="inline">/install.sh</code>, <code class="inline">/mcp</code> or <code class="inline">/openapi.json</code> and press Refresh, or set them yourself (<a href="/developers#surfaces">how</a>).</p>`);
+    out.push(`<p class="muted" style="font-size:13px;margin:10px 0 0">No ${missing.join(', ')} found for this app. Publisher? Serve <code class="inline">/install.sh</code>, <code class="inline">/mcp</code> or <code class="inline">/openapi.json</code>, or list your downloads under a <code class="inline">## Desktop app</code> heading in <code class="inline">/llms.txt</code>, and press Refresh, or set them yourself (<a href="/developers#surfaces">how</a>).</p>`);
   return out.join('\n');
 }
 
@@ -636,7 +647,7 @@ export function surfaceInstructions(app) {
 export function collectionCard(c) {
   return `<a class="col-card" href="/collections/${e(c.slug)}">
     <div class="col-icons">${c.apps.slice(0, 5).map((a) => icon(a, 'icon', 36)).join('')}</div>
-    <div class="eyebrow">${e(c.counts.apps)} app${c.counts.apps === 1 ? '' : 's'}${['cli', 'mcp', 'api'].map((k) => (c.counts[k] ? ` · ${c.counts[k]} ${SURFACE_NAMES[k]}` : '')).join('')}</div>
+    <div class="eyebrow">${e(c.counts.apps)} app${c.counts.apps === 1 ? '' : 's'}${['cli', 'mcp', 'api', 'desktop'].map((k) => (c.counts[k] ? ` · ${c.counts[k]} ${SURFACE_NAMES[k]}` : '')).join('')}</div>
     <h3>${e(c.title)}</h3>
     <p class="muted">${e(c.subtitle)}</p>
     <span class="col-go">Explore collection →</span>
@@ -808,17 +819,18 @@ export function developersPage({ stats }) {
     <div class="term"><div>[![Get it on pwamart](${e(site)}/badges/get-it-on-pwamart.svg)](${e(site)}/apps/YOUR-SLUG)</div></div>
     <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
   </section>
-  <section class="block" id="surfaces"><h2>4 · Your CLI, API and MCP server</h2>
-    <p>Every listing is a PWA. If your app is also a <span class="tag surf s-cli">CLI</span>, an <span class="tag surf s-api">API</span> or an <span class="tag surf s-mcp">MCP</span> server, the listing says so, shows how to install and use each one, and puts it in the <a href="/collections">collections</a> that install in one command. We look for them on your app's own origin each week, and when you press Refresh:</p>
+  <section class="block" id="surfaces"><h2>4 · Your CLI, API, MCP server and desktop app</h2>
+    <p>Every listing is a PWA. If your app is also a <span class="tag surf s-cli">CLI</span>, an <span class="tag surf s-api">API</span>, an <span class="tag surf s-mcp">MCP</span> server or a <span class="tag surf s-desktop">Desktop</span> app, the listing says so, shows how to install and use each one, and puts it in the <a href="/collections">collections</a> that install in one command. We look for them on your app's own origin each week, and when you press Refresh:</p>
     <ul>
       <li><b>CLI</b>: a shell script at <code>/install.sh</code> (it must start with <code>#!</code>), shown as <code>curl -fsSL https://your.app/install.sh | sh</code>. If your tool is in the <a href="https://w3bs.org/packages" rel="noopener">w3bs package catalog</a>, its entry is used and the page adds <code>w3bs install your.app/tool</code>.</li>
       <li><b>MCP</b>: a streamable-HTTP server that answers <code>initialize</code> at <code>/mcp</code>, <code>/api/mcp</code>, or an MCP URL on your host named in <code>/llms.txt</code>; an <code>npx -y …mcp</code> line in llms.txt becomes the stdio command.</li>
       <li><b>API</b>: <code>/openapi.json</code> (or an OpenAPI link in llms.txt), a JSON <code>/api/v1/health</code>, or <code>/api/</code> paths in llms.txt.</li>
+      <li><b>Desktop</b>: a heading with "Desktop" in it in <code>/llms.txt</code>, then one list line per download, <code>- macOS (Apple silicon): https://your.app/download/mac-arm64</code>. Links must be on your host or your GitHub releases; a <code>/download</code> link in the section becomes the "Download the desktop app" button. With no such section, installer links in llms.txt (<code>.dmg</code>, <code>.exe</code>, <code>.msi</code>, <code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>) are used.</li>
     </ul>
     <p>Somewhere else, or wrong? Set it yourself; what you set wins, and <code>false</code> hides one we found:</p>
     <div class="term"><div>pwamart surfaces your-app --cli https://your.app/install.sh --mcp https://your.app/mcp --api https://your.app/api/v1</div>
       <div>curl -X PATCH ${e(site)}/api/v1/apps/your-app -H "authorization: Bearer pm_live_…" -H "content-type: application/json" \\</div>
-      <div>  -d '{"surfaces":{"cli":{"script":"https://your.app/install.sh","w3bs":"your.app/tool"},"mcp":{"url":"https://your.app/mcp"},"api":false}}'</div></div>
+      <div>  -d '{"surfaces":{"cli":{"script":"https://your.app/install.sh","w3bs":"your.app/tool"},"mcp":{"url":"https://your.app/mcp"},"api":false,"desktop":{"page":"https://your.app/download","downloads":[{"label":"macOS","url":"https://your.app/app.dmg"}]}}}'</div></div>
   </section>
   <section class="block" id="cli"><h2>CLI &amp; TUI</h2>
     <p>One line installs it with bun or npm, whichever you have; nothing asks for root:</p>

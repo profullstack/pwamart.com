@@ -114,6 +114,7 @@ export const counts = (apps) => ({
   cli: apps.filter((a) => a.surfaces?.cli?.install).length,
   mcp: apps.filter((a) => a.surfaces?.mcp).length,
   api: apps.filter((a) => a.surfaces?.api).length,
+  desktop: apps.filter((a) => a.surfaces?.desktop).length,
 });
 
 /** What the API, the MCP tool and the CLI show for one collection. */

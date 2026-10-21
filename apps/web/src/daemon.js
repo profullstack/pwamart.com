@@ -218,7 +218,7 @@ export async function runSurfaceProbe({ batch = 8, detectFn, catalog, sql = db()
     where status in ('published', 'unlisted')
       and (surfaces_checked_at is null or surfaces_checked_at < now() - interval '7 days')
     order by surfaces_checked_at nulls first, published_at nulls last limit ${batch}`;
-  const found = { cli: 0, api: 0, mcp: 0 };
+  const found = { cli: 0, api: 0, mcp: 0, desktop: 0 };
   await Promise.all(
     due.map(async (a) => {
       try {
