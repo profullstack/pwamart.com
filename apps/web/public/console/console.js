@@ -806,7 +806,7 @@ route();
 
 const day = (d) => new Date(d).toISOString().slice(0, 10);
 
-/** Get featured for $19: a week on the home page plus the next newsletter. Paid in crypto. */
+/** Get featured for $19: a week on the home page plus the next newsletter. Paid in any major coin or PayPal. */
 async function featuredPanel(slug) {
   const box = $('#featured-panel');
   if (!box) return;
@@ -825,7 +825,7 @@ async function featuredPanel(slug) {
       ? '<p class="ok-msg">In the next newsletter issue.</p>'
       : '';
   box.innerHTML = `<div class="row" style="justify-content:space-between"><h3>Get featured · ${esc(price)}</h3><a class="btn sm" href="/featured" target="_blank">How it works ↗</a></div>
-    <p class="muted">${esc(st.days)} days on the home page's Featured row and at the top of the store, plus a slot in the next pwamart newsletter. One payment in crypto through CoinPay${st.featured && st.featured_until ? '; buying again adds the time on' : ''}.</p>
+    <p class="muted">${esc(st.days)} days on the home page's Featured row and at the top of the store, plus a slot in the next pwamart newsletter. One payment through CoinPay, in any major coin or PayPal${st.featured && st.featured_until ? '; buying again adds the time on' : ''}.</p>
     ${now}
     <div class="row"><button class="btn primary" id="buy-feature" ${st.payments_enabled ? '' : 'disabled'}>${st.featured ? 'Add 7 more days' : `Feature it for ${esc(price)}`}</button><span id="fmsg"></span></div>`;
   $('#buy-feature').addEventListener('click', async () => {
@@ -859,7 +859,7 @@ async function featurePick() {
   const { apps } = await api('/me/apps');
   const live = apps.filter((a) => a.status === 'published');
   view.innerHTML = `<div class="page-head"><div><div class="eyebrow">$19 · 7 days + the newsletter</div><h1>Get featured</h1></div></div>
-    <p class="muted">Pick a live app. You pay once in crypto through CoinPay, and it goes on the home page's Featured row and into the next newsletter as soon as the payment settles.</p>
+    <p class="muted">Pick a live app. You pay once through CoinPay, in any major coin or PayPal, and it goes on the home page's Featured row and into the next newsletter as soon as the payment settles.</p>
     ${
       live.length
         ? `<div class="stack">${live

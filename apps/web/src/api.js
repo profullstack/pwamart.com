@@ -914,8 +914,8 @@ api.get('/apps/:slug/featured', async (c) => {
 
 /**
  * Get featured for $19: a week on the home page's Featured row (and at the top of
- * the default sort), plus a slot in the next newsletter issue. Paid once, in
- * crypto through CoinPay; the webhook does the rest.
+ * the default sort), plus a slot in the next newsletter issue. Paid once through
+ * CoinPay in any major coin or PayPal; the webhook does the rest.
  */
 api.post('/apps/:slug/feature', async (c) => {
   const { user, row } = await appFor(c, c.req.param('slug'));
@@ -923,12 +923,12 @@ api.post('/apps/:slug/feature', async (c) => {
   if (!paymentsEnabled()) return c.json({ error: 'payments are not switched on yet' }, 503);
   const { checkoutUrl } = await createCheckout({
     user,
+    // A CoinPay hosted checkout session: who paid, any coin the business holds or PayPal.
+    email: user.email,
+    accountId: String(user.id),
     amountCents: newsletter.FEATURED.priceCents,
     description: `pwamart: feature ${row.name} for ${newsletter.FEATURED.days} days + the next newsletter`,
     metadata: { user_id: user.id, product: 'featured', app_id: row.id, app_slug: row.slug },
-    blockchain: config.coinpay.defaultChain,
-    // Crypto only: never 'card' or 'both', which open a Stripe session (Stripe is off-limits).
-    paymentMethod: 'crypto',
     successUrl: `${config.siteUrl}/console/apps/${row.slug}?featured=1`,
     cancelUrl: `${config.siteUrl}/console/apps/${row.slug}`,
   });
@@ -952,8 +952,10 @@ api.get('/billing', async (c) => {
   const [state, usage, payments] = await Promise.all([
     billingState(user.id),
     usageFor(user.id),
-    db()`select p.amount_cents, p.status, p.created_at, p.raw->'data'->'metadata'->>'plan' as plan,
-                p.raw->'data'->'metadata'->>'product' as product, p.raw->'data'->'metadata'->>'app_slug' as app_slug,
+    db()`select p.amount_cents, p.status, p.created_at,
+                coalesce(p.raw->'data'->'metadata', p.raw->'metadata')->>'plan' as plan,
+                coalesce(p.raw->'data'->'metadata', p.raw->'metadata')->>'product' as product,
+                coalesce(p.raw->'data'->'metadata', p.raw->'metadata')->>'app_slug' as app_slug,
                 exists (select 1 from plan_grants g where g.payment_id = p.id)
                   or exists (select 1 from featured_slots f where f.payment_id = p.id) as applied
          from payments p where p.user_id = ${user.id} order by p.created_at desc limit 24`,
@@ -981,12 +983,12 @@ api.post('/billing/checkout', async (c) => {
   const what = { new: '1 year', renew: '1 more year', upgrade: 'upgrade, 1 year from today', downgrade: `1 year from ${q.starts_at.toISOString().slice(0, 10)}` }[q.kind];
   const { checkoutUrl } = await createCheckout({
     user,
+    // A CoinPay hosted checkout session: who paid, any coin the business holds or PayPal.
+    email: user.email,
+    accountId: String(user.id),
     amountCents: q.amount_cents,
     description: `pwamart ${p.name}: ${what}`,
     metadata: { user_id: user.id, plan, kind: q.kind },
-    blockchain: config.coinpay.defaultChain,
-    // Crypto only: never 'card' or 'both', which open a Stripe session (Stripe is off-limits).
-    paymentMethod: 'crypto',
     successUrl: `${config.siteUrl}/console/billing?paid=1`,
     cancelUrl: `${config.siteUrl}/console/billing`,
   });

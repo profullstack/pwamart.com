@@ -197,10 +197,13 @@ describe('mcp', () => {
 
 describe('payments', () => {
   // Stripe is off-limits (house rule): CoinPay's 'card' and 'both' methods open a Stripe session.
-  test('checkout is crypto only', async () => {
+  // Checkout is a CoinPay hosted session (any coin or PayPal); no call asks for a card rail.
+  test('checkout never asks for a card rail', async () => {
     const src = await Bun.file(new URL('../apps/web/src/api.js', import.meta.url)).text();
-    expect(src).toContain("paymentMethod: 'crypto'");
     expect(src).not.toMatch(/paymentMethod:\s*'(card|both)'/);
+    const pay = await Bun.file(new URL('../packages/payments/src/index.js', import.meta.url)).text();
+    expect(pay).toContain('/api/checkout/sessions');
+    expect(pay).not.toContain('payment_method');
   });
 });
 
