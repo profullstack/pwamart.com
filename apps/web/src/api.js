@@ -279,7 +279,7 @@ api.get('/apps', async (c) => {
   );
 });
 
-/** How many published apps are each surface: every one is a PWA; some are also a CLI, API or MCP server. */
+/** How many published apps are each surface: every one is a PWA; some are also a CLI, API, MCP server or desktop app. */
 api.get('/surfaces', async (c) => {
   const n = await surfaceCounts();
   return c.json({ surfaces: Object.entries(SURFACES).map(([key, name]) => ({ key, name, apps: n[key] ?? 0 })) });

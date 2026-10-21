@@ -555,7 +555,7 @@ app.get('/sitemap.xml', async (c) => {
     u('/apps?feature=offline'),
     u('/collections'),
     ...COLLECTIONS.map((x) => u(`/collections/${x.slug}`)),
-    ...['cli', 'api', 'mcp'].map((k) => u(`/apps?surface=${k}`)),
+    ...['cli', 'api', 'mcp', 'desktop'].map((k) => u(`/apps?surface=${k}`)),
     ...rows.map((r) => u(`/apps/${r.slug}`, r.updated_at)),
     ...pubs.map((p) => u(`/publishers/${p.slug}`)),
   ].join('');
@@ -575,9 +575,9 @@ Unlimited $199/year (unlimited publishers and apps, shared orgs, teams, projects
 
 ## API (${config.siteUrl}/api/v1)
 Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one in the console under API keys).
-- GET  /apps?q=&category=&publisher=&feature=offline&surface=cli|api|mcp&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
-- GET  /apps/:slug                         details, publisher, reviews; app.surfaces = {pwa, cli, api, mcp} with install commands
-- GET  /surfaces                           how many apps are a PWA (all), a CLI, an API, an MCP server
+- GET  /apps?q=&category=&publisher=&feature=offline&surface=cli|api|mcp|desktop&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
+- GET  /apps/:slug                         details, publisher, reviews; app.surfaces = {pwa, cli, api, mcp, desktop} with install commands and downloads
+- GET  /surfaces                           how many apps are a PWA (all), a CLI, an API, an MCP server, a desktop app
 - GET  /collections, GET /collections/:slug   agentic workflow collections, each with one-command installs
 - POST /apps/:slug/installs {method}       count an install
 - GET  /categories, GET /plans, GET /publishers?q=&filter=all|claimed|imported|verified&sort=apps|name|new, GET /publishers/:slug
@@ -586,7 +586,7 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /apps {publisher, url, category?, slug?}   inspect + create a draft
 - POST /apps/:slug/verify | /refresh | /publish | /unlist | /unpublish
 - PATCH /apps/:slug {name, summary, description, category, tags, project, surfaces}
-  surfaces: {cli: {script|install, w3bs, commands}, api: {base, openapi, docs}, mcp: {url, stdio}}; a key set to false hides a detected surface, null returns it to detection
+  surfaces: {cli: {script|install, w3bs, commands}, api: {base, openapi, docs}, mcp: {url, stdio}, desktop: {page, downloads: [{label, url}]}}; a key set to false hides a detected surface, null returns it to detection
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
@@ -599,12 +599,14 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 $19, paid once in crypto: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
 for the same week; reach: ${config.siteUrl}/advertise. Newsletter: ${config.siteUrl}/newsletter
 
-## Surfaces: PWA, CLI, API, MCP
+## Surfaces: PWA, CLI, API, MCP, Desktop
 Every listing is a PWA. The store also finds, on the app's own origin: a CLI (a shell
 installer at /install.sh, or its entry in the w3bs catalog at https://w3bs.org/packages),
-an MCP server (answers initialize at /mcp, /api/mcp or a URL in its llms.txt) and an API
-(/openapi.json, /api/v1/health or /api/ paths in llms.txt). Re-checked weekly and on
-POST /apps/:slug/refresh. Filter with ?surface=cli|api|mcp.
+an MCP server (answers initialize at /mcp, /api/mcp or a URL in its llms.txt), an API
+(/openapi.json, /api/v1/health or /api/ paths in llms.txt) and a desktop app (list lines
+"- Platform: https://..." under a llms.txt heading with "Desktop" in it, on the app's host
+or its GitHub releases; else .dmg/.exe/.msi/.AppImage/.deb/.rpm links). Re-checked weekly
+and on POST /apps/:slug/refresh. Filter with ?surface=cli|api|mcp|desktop.
 
 ## Collections (${config.siteUrl}/collections)
 Apps grouped by agentic workflow. Each installs in one command:
@@ -615,11 +617,11 @@ Collections: ${COLLECTIONS.map((x) => x.slug).join(', ')}
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)
 - stdio: npx -y @profullstack/pwamart-mcp   (PWAMART_API_KEY for publishing tools)
-Tools: search_apps (surface=cli|api|mcp), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app
+Tools: search_apps (surface=cli|api|mcp|desktop), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app
 
 ## CLI + TUI
 - curl -fsSL ${config.siteUrl}/install.sh | sh    (or npm i -g @profullstack/pwamart)
-- pwamart search <q> [--surface cli|api|mcp] | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
+- pwamart search <q> [--surface cli|api|mcp|desktop] | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
 - pwamart collections [slug]   agentic workflow collections and their one-command installs
 - pwamart login (OAuth 2.1, browser; --manual over SSH) | logout | whoami | upgrade | uninstall
 - curl -fsSL ${config.siteUrl}/upgrade.sh | sh ; curl -fsSL ${config.siteUrl}/uninstall.sh | sh

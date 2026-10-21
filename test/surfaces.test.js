@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { claudeMcpLines, installScript, mcpConfig, pick } from '../apps/web/src/collections.js';
-import { cleanSurfaceSet, detectSurfaces, keysOf, mergeSurfaces, rpcMessage, w3bsMatch, w3bsPage } from '../apps/web/src/surfaces.js';
+import { cleanSurfaceSet, desktopFrom, detectSurfaces, keysOf, mergeSurfaces, rpcMessage, w3bsMatch, w3bsPage } from '../apps/web/src/surfaces.js';
 import { surfaceFlags, surfaceInstructions } from '../apps/web/src/pages.js';
 
 /** A fake origin: { 'GET /path': {status?, type?, text} }. Records what was asked. */
@@ -16,7 +16,7 @@ const INIT_OK = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersio
 
 describe('surface detection', () => {
   test('nothing but a PWA finds nothing', async () => {
-    expect(await detectSurfaces({ origin: 'https://a.example', fetchFn: site({}) })).toEqual({ cli: null, api: null, mcp: null });
+    expect(await detectSurfaces({ origin: 'https://a.example', fetchFn: site({}) })).toEqual({ cli: null, api: null, mcp: null, desktop: null });
   });
 
   test('install.sh with a shebang is a CLI; bash scripts keep | bash; an HTML 200 is not', async () => {
@@ -109,6 +109,66 @@ describe('surface detection', () => {
     expect(shell.api).toBeNull();
   });
 
+  test('desktop: the list under a Desktop heading in llms.txt, the /download link as its page', async () => {
+    const llms = [
+      '# nixamp',
+      '- Web: https://nixamp.com',
+      '## Desktop app',
+      'Downloads: https://nixamp.com/download',
+      '- macOS (Apple silicon): https://nixamp.com/download/mac-arm64',
+      '- macOS (Intel): https://nixamp.com/download/mac-x64',
+      '- Windows (x64): https://nixamp.com/download/win-x64',
+      '- Linux AppImage (x86_64): https://nixamp.com/download/linux-x64',
+      '- Debian/Ubuntu .deb (amd64): https://nixamp.com/download/deb-amd64.',
+      '## API',
+      '- Player: https://nixamp.com/download/not-desktop',
+    ].join('\n');
+    const d = await detectSurfaces({ origin: 'https://nixamp.com', fetchFn: site({ 'GET /llms.txt': { text: llms } }) });
+    expect(d.desktop).toEqual({
+      page: 'https://nixamp.com/download',
+      downloads: [
+        { label: 'macOS (Apple silicon)', url: 'https://nixamp.com/download/mac-arm64' },
+        { label: 'macOS (Intel)', url: 'https://nixamp.com/download/mac-x64' },
+        { label: 'Windows (x64)', url: 'https://nixamp.com/download/win-x64' },
+        { label: 'Linux AppImage (x86_64)', url: 'https://nixamp.com/download/linux-x64' },
+        { label: 'Debian/Ubuntu .deb (amd64)', url: 'https://nixamp.com/download/deb-amd64' },
+      ],
+      source: 'detected',
+    });
+  });
+
+  test('desktop: GitHub releases count, other hosts do not, and the cap is 12', () => {
+    const gh = 'https://github.com/acme/app/releases/download/v1.2.0';
+    const notes = `### Desktop\n- [macOS](${gh}/App.dmg)\n- Windows: ${gh}/App-Setup.exe\n- Mirror: https://evil.example/App.dmg\n- Not releases: https://github.com/acme/app/blob/main/x.dmg\n`;
+    expect(desktopFrom(notes, 'https://www.a.example')).toEqual({
+      page: `${gh}/App.dmg`,
+      downloads: [
+        { label: 'macOS', url: `${gh}/App.dmg` },
+        { label: 'Windows', url: `${gh}/App-Setup.exe` },
+      ],
+      source: 'detected',
+    });
+    // Only foreign links: nothing, not even a page.
+    expect(desktopFrom('## Desktop app\n- macOS: https://evil.example/App.dmg\n- Credentials: https://u:p@a.example/x', 'https://a.example')).toBeNull();
+    const many = `## Desktop\n${Array.from({ length: 20 }, (_, i) => `- Build ${i}: https://a.example/d/${i}`).join('\n')}`;
+    expect(desktopFrom(many, 'https://a.example').downloads.length).toBe(12);
+  });
+
+  test('desktop: no section falls back to installer links anywhere in llms.txt', () => {
+    const notes = 'Get it: https://a.example/files/App-1.0.dmg, https://a.example/files/App.AppImage and https://github.com/acme/app/releases/download/v1/app_1.0_amd64.deb\nhttps://evil.example/App.exe https://a.example/page.html';
+    expect(desktopFrom(notes, 'https://a.example')).toEqual({
+      page: 'https://github.com/acme/app/releases',
+      downloads: [
+        { label: 'macOS', url: 'https://a.example/files/App-1.0.dmg' },
+        { label: 'Linux AppImage', url: 'https://a.example/files/App.AppImage' },
+        { label: 'Debian/Ubuntu .deb', url: 'https://github.com/acme/app/releases/download/v1/app_1.0_amd64.deb' },
+      ],
+      source: 'detected',
+    });
+    expect(desktopFrom('just a web app https://a.example/', 'https://a.example')).toBeNull();
+    expect(desktopFrom('', 'https://a.example')).toBeNull();
+  });
+
   test('rpcMessage reads JSON and SSE bodies', () => {
     expect(rpcMessage('{"id":1}')).toEqual({ id: 1 });
     expect(rpcMessage('event: message\ndata: {"id":2}\n')).toEqual({ id: 2 });
@@ -130,6 +190,25 @@ describe('publisher corrections', () => {
     expect(cleanSurfaceSet({ api: { base: 'https://a.example/api/v1/' } }).api.base).toBe('https://a.example/api/v1');
   });
 
+  test('cleanSurfaceSet takes a desktop page and downloads, https only', () => {
+    expect(cleanSurfaceSet({ desktop: { page: 'https://a.example/download', downloads: [{ label: ' macOS\n(arm64) ', url: 'https://a.example/App.dmg' }, { url: 'https://a.example/App.exe' }] } })).toEqual({
+      desktop: {
+        page: 'https://a.example/download',
+        downloads: [
+          { label: 'macOS (arm64)', url: 'https://a.example/App.dmg' },
+          { label: 'App.exe', url: 'https://a.example/App.exe' },
+        ],
+        source: 'publisher',
+      },
+    });
+    expect(cleanSurfaceSet({ desktop: false, cli: null })).toEqual({ desktop: false, cli: null });
+    expect(() => cleanSurfaceSet({ desktop: {} })).toThrow();
+    expect(() => cleanSurfaceSet({ desktop: { page: 'http://a.example/download' } })).toThrow();
+    expect(() => cleanSurfaceSet({ desktop: { page: 'https://u:p@a.example/download' } })).toThrow();
+    expect(() => cleanSurfaceSet({ desktop: { downloads: [{ label: 'x', url: 'javascript:alert(1)' }] } })).toThrow();
+    expect(() => cleanSurfaceSet({ desktop: { downloads: 'https://a.example/App.dmg' } })).toThrow();
+  });
+
   test('cleanSurfaceSet refuses anything that would become an unsafe command', () => {
     expect(() => cleanSurfaceSet({ cli: { script: 'http://a.example/i.sh' } })).toThrow();
     expect(() => cleanSurfaceSet({ cli: { install: 'curl https://a.example | sudo sh' } })).toThrow();
@@ -148,6 +227,10 @@ describe('publisher corrections', () => {
     expect(merged.mcp.url).toBe('https://a.example/mcp');
     expect(merged.cli).toEqual({ install: 'curl -fsSL https://a.example/install.sh | sh', script: 'https://a.example/install.sh', w3bs: 'a.example/a' });
     expect(keysOf(merged)).toEqual(['pwa', 'cli', 'mcp']);
+    const desk = mergeSurfaces({ desktop: { page: 'https://a.example/download', downloads: [{ label: 'macOS', url: 'https://a.example/m' }] } }, { desktop: { page: 'https://a.example/get' } });
+    expect(desk.desktop).toEqual({ page: 'https://a.example/get', downloads: [{ label: 'macOS', url: 'https://a.example/m' }] });
+    expect(keysOf(desk)).toEqual(['pwa', 'desktop']);
+    expect(keysOf(mergeSurfaces(desk, { desktop: false }))).toEqual(['pwa']);
     expect(keysOf(mergeSurfaces())).toEqual(['pwa']);
   });
 });
@@ -197,6 +280,7 @@ describe('surface pages', () => {
       cli: { install: 'curl -fsSL https://acme.example/install.sh | sh', script: 'https://acme.example/install.sh', w3bs: 'acme.example/acme', w3bs_url: w3bsPage('acme.example/acme'), w3bs_install: 'w3bs install acme.example/acme', commands: ['acme'] },
       mcp: { url: 'https://acme.example/mcp' },
       api: null,
+      desktop: { page: 'https://acme.example/download', downloads: [{ label: 'macOS <arm64>', url: 'https://acme.example/download/mac' }, { label: 'bad', url: 'javascript:alert(1)' }] },
     },
   };
 
@@ -213,5 +297,9 @@ describe('surface pages', () => {
     expect(h).toContain('w3bs.org/packages');
     expect(h).toContain('claude mcp add --transport http acme https://acme.example/mcp');
     expect(h).toContain('No API found');
+    expect(h).toContain('<a href="https://acme.example/download" rel="noopener nofollow" target="_blank">Download the desktop app');
+    expect(h).toContain('macOS &lt;arm64&gt;');
+    expect(h).not.toContain('javascript:');
+    expect(surfaceFlags(app)).toContain('s-desktop');
   });
 });

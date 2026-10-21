@@ -7,7 +7,7 @@ curl -fsSL https://pwamart.com/install.sh | sh     # or: npm i -g @profullstack/
 
 pwamart search notes
 pwamart browse --offline    # only apps whose service worker works offline
-pwamart search --surface mcp   # apps that are also an MCP server (or cli, api)
+pwamart search --surface mcp   # apps that are also an MCP server (or cli, api, desktop)
 pwamart collections [slug]  # agentic workflow collections: one curl | sh installs every CLI
 pwamart info <slug>
 pwamart install <slug>      # opens it as an app window, writes a launcher entry (Linux)

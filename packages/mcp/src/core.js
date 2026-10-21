@@ -22,7 +22,7 @@ export const TOOLS = [
         sort: { type: 'string', enum: ['top', 'new', 'rating', 'name'] },
         feature: { type: 'string', enum: ['offline'], description: 'only apps with this detected feature; offline = its service worker answers from a cache' },
         offline: { type: 'boolean', description: 'shorthand for feature: "offline"' },
-        surface: { type: 'string', enum: ['cli', 'api', 'mcp'], description: 'only apps that are also a CLI (curl | sh installer), an HTTP API or an MCP server' },
+        surface: { type: 'string', enum: ['cli', 'api', 'mcp', 'desktop'], description: 'only apps that are also a CLI (curl | sh installer), an HTTP API, an MCP server or a native desktop app' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
       additionalProperties: false,
@@ -220,7 +220,7 @@ export async function handleRpc(req, { call, siteUrl, version }) {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: 'pwamart', version },
-        instructions: 'pwamart is an app store for installable web apps (PWAs). Search with search_apps (surface=cli|api|mcp for apps that are also a CLI, API or MCP server), read one with get_app, use install_app for platform steps, and list_collections / get_collection for agentic workflow bundles that install in one command. Publishing tools need an API key.',
+        instructions: 'pwamart is an app store for installable web apps (PWAs). Search with search_apps (surface=cli|api|mcp|desktop for apps that are also a CLI, API, MCP server or desktop app), read one with get_app, use install_app for platform steps, and list_collections / get_collection for agentic workflow bundles that install in one command. Publishing tools need an API key.',
       };
     case 'tools/list':
       return { tools: TOOLS };

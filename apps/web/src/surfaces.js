@@ -1,8 +1,9 @@
 import { safeFetch } from './inspect.js';
 
 /**
- * Every listing is a PWA. Some are also a CLI, an HTTP API or an MCP server, and
- * an agent can use those without a browser at all. This finds them:
+ * Every listing is a PWA. Some are also a CLI, an HTTP API, an MCP server or a
+ * native desktop app, and an agent can use the first three without a browser at
+ * all. This finds them:
  *
  *   cli  a `curl | sh` installer: the app's own /install.sh (a shell script, by its
  *        shebang), or its entry in the w3bs package catalog (w3bs.org/packages)
@@ -10,13 +11,17 @@ import { safeFetch } from './inspect.js';
  *        or a same-host MCP URL its llms.txt names; plus an `npx` stdio command
  *        when llms.txt gives one
  *   api  an OpenAPI document, a JSON /api/v1/health, or /api/ paths in llms.txt
+ *   desktop  the downloads under a "Desktop" heading in llms.txt (same host, or the
+ *        app's GitHub releases); failing that, installer links (.dmg, .exe, …)
  *
  * Only the app's own origin is probed (through the inspector's guarded fetch), and
  * only the publisher's own words (its origin, its w3bs entry) become a command we
  * show. A publisher can correct any of it: `surfaces_set` wins key by key.
  */
 
-export const SURFACES = { pwa: 'PWA', cli: 'CLI', api: 'API', mcp: 'MCP' };
+export const SURFACES = { pwa: 'PWA', cli: 'CLI', api: 'API', mcp: 'MCP', desktop: 'Desktop' };
+/** The surfaces besides pwa, which every listing is. */
+export const EXTRA_SURFACES = Object.keys(SURFACES).filter((k) => k !== 'pwa');
 export const surfaceKey = (v) => (v && Object.hasOwn(SURFACES, String(v)) ? String(v) : null);
 
 export const W3BS_CATALOG = 'https://w3bs.org/repo/targets/catalog/index.json';
@@ -82,6 +87,69 @@ const httpsUrl = (v) => {
 const NPX = /^npx -y (@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*( [\w.@/:=-]+){0,4}$/;
 const W3BS_ID = /^[a-z0-9.-]+\.[a-z]{2,}\/[a-z0-9][\w.-]*$/i;
 
+/* ---------------------------------------------------------------- desktop -- */
+
+const DESKTOP_MAX = 12;
+const INSTALLER = /\.(dmg|exe|msi|appimage|deb|rpm)$/i;
+const INSTALLER_LABEL = { dmg: 'macOS', exe: 'Windows', msi: 'Windows', appimage: 'Linux AppImage', deb: 'Debian/Ubuntu .deb', rpm: 'Fedora/RHEL .rpm' };
+const LINK = /https:\/\/[^\s)<>"'`\]]+/g;
+const HEADING = /^\s{0,3}#{1,6}\s/;
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s+/;
+/** A GitHub release page or asset: github.com/<owner>/<repo>/releases… */
+const ghRelease = (u) => /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases(\/|$)/i.test(u);
+const ghReleasesPage = (u) => u.match(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases/i)?.[0] ?? null;
+const cleanLabel = (v) => String(v ?? '').replace(/[\s\x00-\x1f]+/g, ' ').trim().slice(0, 80);
+
+/**
+ * The desktop app an origin's own llms.txt says it ships, or null:
+ *
+ *   ## Desktop app
+ *   Downloads: https://your.app/download
+ *   - macOS (Apple silicon): https://your.app/download/mac-arm64
+ *   - Windows (x64): https://github.com/you/app/releases/download/v1/App-Setup.exe
+ *
+ * Links count only on the app's own host or its GitHub releases. A list line is a
+ * download, labelled by its text before the link; `page` is the section's
+ * /download(s) link, or its first link. Without such a section, installer links
+ * (.dmg, .exe, .msi, .AppImage, .deb, .rpm) anywhere in the file are used.
+ */
+export function desktopFrom(notes, origin) {
+  const host = bareHost(origin);
+  if (!host || !notes) return null;
+  const accept = (raw) => {
+    const url = httpsUrl(String(raw).replace(/[.,;:]+$/, ''));
+    return url && (bareHost(url) === host || ghRelease(url)) ? url : null;
+  };
+  const isPage = (u) => bareHost(u) === host && /^\/downloads?\/?$/i.test(new URL(u).pathname);
+  const lines = String(notes).split('\n');
+  const start = lines.findIndex((l) => HEADING.test(l) && /desktop/i.test(l));
+  if (start >= 0) {
+    const end = lines.findIndex((l, i) => i > start && HEADING.test(l));
+    const links = [];
+    const downloads = [];
+    for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
+      for (const m of line.matchAll(LINK)) {
+        const url = accept(m[0]);
+        if (!url) continue;
+        links.push(url);
+        if (!LIST_ITEM.test(line) || isPage(url)) continue;
+        // "- macOS (Apple silicon): https://…" or "- [macOS](https://…)"
+        const text = line.slice(0, m.index).replace(LIST_ITEM, '');
+        const label = cleanLabel(text.match(/\[([^\]]+)\]\($/)?.[1] ?? text.replace(/[\s:–—-]+$/, '')) || cleanLabel(new URL(url).pathname.split('/').pop());
+        if (!downloads.some((d) => d.url === url)) downloads.push({ label, url });
+      }
+    }
+    if (links.length) return { page: links.find(isPage) ?? links[0], downloads: downloads.slice(0, DESKTOP_MAX), source: 'detected' };
+  }
+  const files = [...new Set([...String(notes).matchAll(LINK)].map((m) => accept(m[0])).filter((u) => u && INSTALLER.test(new URL(u).pathname)))];
+  if (!files.length) return null;
+  const downloads = files.slice(0, DESKTOP_MAX).map((url) => {
+    const ext = new URL(url).pathname.match(INSTALLER)[1].toLowerCase();
+    return { label: `${INSTALLER_LABEL[ext]}${ext === 'msi' ? ' .msi' : ''}`, url };
+  });
+  return { page: files.map(ghReleasesPage).find(Boolean) ?? null, downloads, source: 'detected' };
+}
+
 /* -------------------------------------------------------------- detection -- */
 
 const ok = (r) => r && r.status >= 200 && r.status < 300;
@@ -142,14 +210,14 @@ const get = async (fetchFn, url, opts = {}) => {
 
 /**
  * Probe one origin. `fetchFn` is the inspector's safeFetch (tests pass a fake);
- * `catalog` is the w3bs catalog (w3bsCatalog()). Returns { cli, api, mcp }, each
+ * `catalog` is the w3bs catalog (w3bsCatalog()). Returns { cli, api, mcp, desktop }, each
  * null or a plain object that says where it came from.
  */
 export async function detectSurfaces({ origin, fetchFn = safeFetch, catalog = [], slug = null }) {
   const base = String(origin).replace(/\/+$/, '');
   const host = bareHost(base);
   const sameHost = (u) => bareHost(u) === host;
-  const out = { cli: null, api: null, mcp: null };
+  const out = { cli: null, api: null, mcp: null, desktop: null };
 
   const [script, llms] = await Promise.all([get(fetchFn, `${base}/install.sh`, { accept: 'text/plain, */*' }), get(fetchFn, `${base}/llms.txt`, { accept: 'text/plain, */*' })]);
   const notes = ok(llms) && !isHtml(llms) ? llms.text : '';
@@ -202,6 +270,9 @@ export async function detectSurfaces({ origin, fetchFn = safeFetch, catalog = []
       source: 'detected',
     };
   }
+
+  /* desktop */
+  out.desktop = desktopFrom(notes, base);
   return out;
 }
 
@@ -213,10 +284,10 @@ export async function detectSurfaces({ origin, fetchFn = safeFetch, catalog = []
  * message for the API to return.
  */
 export function cleanSurfaceSet(input) {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('surfaces must be an object of cli, api and mcp');
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('surfaces must be an object of cli, api, mcp and desktop');
   const out = {};
   for (const [k, v] of Object.entries(input)) {
-    if (!['cli', 'api', 'mcp'].includes(k)) throw new Error(`unknown surface ${k}; use cli, api or mcp`);
+    if (!EXTRA_SURFACES.includes(k)) throw new Error(`unknown surface ${k}; use cli, api, mcp or desktop`);
     if (v === null || v === false) {
       out[k] = v;
       continue;
@@ -241,6 +312,17 @@ export function cleanSurfaceSet(input) {
       if (stdio && !NPX.test(stdio)) throw new Error('surfaces.mcp.stdio must be an "npx -y <package> [args]" command');
       if (!url && !stdio) throw new Error('surfaces.mcp needs url (streamable HTTP) or stdio (npx -y …)');
       out.mcp = { url, transport: url ? 'http' : 'stdio', name: null, stdio, source: 'publisher' };
+    } else if (k === 'desktop') {
+      const page = v.page ? httpsUrl(v.page) : null;
+      if (v.page && !page) throw new Error('surfaces.desktop.page must be an https URL');
+      if (v.downloads !== undefined && !Array.isArray(v.downloads)) throw new Error('surfaces.desktop.downloads is a list of {label, url}');
+      const downloads = (v.downloads ?? []).slice(0, DESKTOP_MAX).map((d) => {
+        const url = httpsUrl(d?.url);
+        if (!url) throw new Error('each surfaces.desktop.downloads[].url must be an https URL');
+        return { label: cleanLabel(d.label) || cleanLabel(new URL(url).pathname.split('/').pop()), url };
+      });
+      if (!page && !downloads.length) throw new Error('surfaces.desktop needs page (an https downloads page) or downloads ([{label, url}])');
+      out.desktop = { page, downloads, source: 'publisher' };
     } else {
       const base = httpsUrl(v.base);
       const docs = v.docs ? httpsUrl(v.docs) : null;
@@ -256,7 +338,7 @@ export function cleanSurfaceSet(input) {
 /** Detected, then the publisher's word on top. `pwa` is always there: it is a PWA store. */
 export function mergeSurfaces(detected = {}, set = {}) {
   const out = { pwa: true };
-  for (const k of ['cli', 'api', 'mcp']) {
+  for (const k of EXTRA_SURFACES) {
     const s = set?.[k];
     out[k] = s === false ? null : s ? { ...(detected?.[k] ?? {}), ...s } : (detected?.[k] ?? null);
   }

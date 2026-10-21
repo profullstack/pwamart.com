@@ -12,7 +12,7 @@ import { installApp } from './install.js';
 const HELP = `pwamart: find and install web apps (PWAs) on any device.
 
 Browse
-  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--surface cli|api|mcp] [--json]
+  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--surface cli|api|mcp|desktop] [--json]
   pwamart browse [--category C] [--offline]   the same list; --offline: only apps that work offline
   pwamart info <slug> [--json]
   pwamart install <slug> [--no-launch]   open it as an app window + add a launcher entry
@@ -39,7 +39,7 @@ Publish
   pwamart verify <slug>
   pwamart publish <slug>
   pwamart apps                           your apps and their status
-  pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL]
+  pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL] [--desktop URL|false]
                                          say where your app's CLI, MCP server and API are (what you set wins)
   pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
@@ -88,8 +88,8 @@ export function formatList(r) {
   return `${lines.join('\n')}\n\n${r.total} app${r.total === 1 ? '' : 's'}${r.total > r.apps.length ? ` (showing ${r.apps.length})` : ''} · pwamart install <slug>`;
 }
 
-/** "PWA CLI MCP": what an app can be used as. */
-export const surfaceTags = (a) => ['pwa', 'cli', 'api', 'mcp'].filter((k) => (k === 'pwa' ? true : a.surfaces?.[k])).map((k) => k.toUpperCase()).join(' ');
+/** "PWA CLI MCP DESKTOP": what an app can be used as. */
+export const surfaceTags = (a) => ['pwa', 'cli', 'api', 'mcp', 'desktop'].filter((k) => (k === 'pwa' ? true : a.surfaces?.[k])).map((k) => k.toUpperCase()).join(' ');
 
 /** How to use each surface an app has, one line per command. */
 export function surfaceLines(app) {
@@ -101,6 +101,8 @@ export function surfaceLines(app) {
   if (s.mcp?.url) out.push(`MCP       claude mcp add --transport http ${app.slug} ${s.mcp.url}`);
   if (s.mcp?.stdio) out.push(`${s.mcp.url ? 'MCP stdio' : 'MCP      '} ${s.mcp.stdio}`);
   if (s.api) out.push(`API       ${s.api.base}${s.api.docs ? `   docs: ${s.api.docs}` : ''}`);
+  if (s.desktop?.page) out.push(`Desktop   ${s.desktop.page}`);
+  for (const d of s.desktop?.downloads ?? []) out.push(`          ${d.label}: ${d.url}`);
   return out;
 }
 
@@ -184,12 +186,13 @@ export async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     case 'surfaces': {
-      if (!rest[0]) throw new Error('usage: pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL]');
+      if (!rest[0]) throw new Error('usage: pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL] [--desktop URL|false]');
       const off = (v) => v === false || v === 'false';
       const set = {};
       if (flags.cli !== undefined || flags.w3bs) set.cli = off(flags.cli) ? false : { ...(typeof flags.cli === 'string' && { script: flags.cli }), ...(flags.w3bs && { w3bs: flags.w3bs }) };
       if (flags.mcp !== undefined || flags['mcp-stdio']) set.mcp = off(flags.mcp) ? false : { ...(typeof flags.mcp === 'string' && { url: flags.mcp }), ...(flags['mcp-stdio'] && { stdio: flags['mcp-stdio'] }) };
       if (flags.api !== undefined) set.api = off(flags.api) ? false : { base: flags.api, ...(flags.openapi && { openapi: flags.openapi }), ...(flags.docs && { docs: flags.docs }) };
+      if (flags.desktop !== undefined) set.desktop = off(flags.desktop) ? false : { page: flags.desktop };
       const r = Object.keys(set).length ? await api.updateApp(auth, rest[0], { surfaces: set }) : await api.getApp(auth, rest[0]);
       out(r.app.surfaces, [`${r.app.slug}: ${surfaceTags(r.app)}`, ...surfaceLines(r.app)].join('\n'));
       return 0;
