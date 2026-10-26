@@ -19,6 +19,8 @@ const OPEN = [
   '/webhooks/',
   '/assets/',
   '/badges/',
+  '/for.svg',
+  '/for',
   '/sw.js',
   '/manifest.webmanifest',
   '/icon.svg',

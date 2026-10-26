@@ -2,6 +2,7 @@ import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { siteFooter } from './footer.js';
 import { publisherPosts } from './share-posts.js';
 import { claudeMcpLines, mcpConfig } from './collections.js';
+import { BADGE_H, BADGE_W, badgeSnippets } from './badge.js';
 
 /**
  * Server-rendered store pages. Plain template strings: every value from the
@@ -91,7 +92,7 @@ ${
 <main>${body}</main>
 <footer class="foot"><div class="wrap">
   <span>&copy; ${new Date().getFullYear()} Profullstack, Inc.</span>
-  <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav><a class="builtindie-badge" href="https://built.indie.pit.world/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://built.indie.pit.world/for.svg?site=https://pwamart.com/" alt="Listed on built.indie" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a>
+  <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav><span style="display:inline-flex;flex-wrap:wrap;gap:.6rem;align-items:center"><a class="builtindie-badge" href="https://built.indie.pit.world/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://built.indie.pit.world/for.svg?site=https://pwamart.com/" alt="Listed on built.indie" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a><a class="pwamart-badge" href="https://pwamart.com/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://pwamart.com/for.svg?site=https://pwamart.com/" alt="Get it on pwamart" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a></span>
   <nav>
     <a href="/developers">Developers</a><a href="/developers#api">API</a><a href="/pricing">Pricing</a>
     <a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
@@ -175,6 +176,35 @@ export function shareBuilder(app) {
         </div>
         <p class="muted" style="font-size:12.5px;margin:10px 0 0">Mastodon, Threads, Discord or anywhere else: Copy post and paste.</p>
       </div>
+    </div>
+  </section>`;
+}
+
+/**
+ * The live badge (rating + installs) for the publisher's own site, with the
+ * backlink state: a homepage that links back earns the ✓ and a followed link.
+ */
+export function badgeSection(app) {
+  const site = config.siteUrl;
+  const s = badgeSnippets(app, site);
+  const row = (label, val) => `
+      <div class="snip"><div class="snip-head"><span>${label}</span><button class="btn sm" type="button" data-copy-text="${e(val)}">Copy</button></div>
+        <pre><code>${e(val)}</code></pre></div>`;
+  const state = app.badge_verified
+    ? `<p><span class="ok-msg" style="color:#2f7d4f;font-weight:600">✓ ${e(app.name)}’s site links back.</span> <span class="muted">Its website link here is followed.</span></p>`
+    : `<p class="muted" style="margin:0 0 12px">Put it on <b>${e(app.url)}</b>. Once that page links here, the listing gets the ✓ and a followed link to your site. We check daily; the console (or <code class="inline">pwamart badge ${e(app.slug)} --check</code>) checks now.</p>`;
+  return `<section class="share" id="badge">
+    <h2 style="margin:36px 0 6px">Badge for your site</h2>
+    <p class="muted" style="margin:0 0 12px">A live badge: it shows the rating and installs and links to this page.</p>
+    ${state}
+    <div class="panel">
+      <p style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 12px">
+        <img src="${e(s.dark.image)}" alt="${e(s.alt)}" width="${BADGE_W}" height="${BADGE_H}" loading="lazy">
+        <img src="${e(s.light.image)}" alt="${e(s.alt)} (light)" width="${BADGE_W}" height="${BADGE_H}" loading="lazy">
+      </p>
+      ${row('HTML', s.dark.html)}
+      ${row('Markdown (GitHub README)', s.dark.markdown)}
+      ${row('HTML, light', s.light.html)}
     </div>
   </section>`;
 }
@@ -536,6 +566,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       ${whatsNew(app, releases)}
 
       ${shareBuilder(app)}
+      ${badgeSection(app)}
 
       <h2 style="margin:36px 0 4px">Ratings &amp; reviews</h2>
       ${reviews.length ? reviews.map((r) => `<div class="review"><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span> <b>${e(r.author)}</b><div class="prose">${e(r.body)}</div></div>`).join('') : '<p class="muted">No reviews yet.</p>'}
@@ -550,7 +581,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
         <h3>Information</h3>
         <dl class="kv">
           <dt>Publisher</dt><dd><a href="/publishers/${e(app.publisher.slug)}">${e(app.publisher.name)}</a></dd>
-          <dt>Website</dt><dd><a href="${e(safeUrl(app.origin))}" rel="noopener" target="_blank">${e(host)}</a></dd>
+          <dt>Website</dt><dd><a href="${e(safeUrl(app.origin))}" rel="${app.badge_verified ? 'noopener' : 'noopener nofollow ugc'}" target="_blank">${e(host)}</a>${app.badge_verified ? ' <span title="Their site links back to pwamart" style="color:#2f7d4f">✓</span>' : ''}</dd>
           <dt>Category</dt><dd>${e(app.category_name)}</dd>
           <dt>Opens as</dt><dd>${e(app.display ?? 'browser')}</dd>
           <dt>Surfaces</dt><dd>${['PWA', ...['cli', 'api', 'mcp', 'desktop'].filter((k) => app.surfaces?.[k]).map((k) => SURFACE_NAMES[k])].join(' · ')}</dd>
@@ -818,6 +849,10 @@ export function developersPage({ stats }) {
     <p style="display:flex;gap:12px;flex-wrap:wrap"><img src="/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"><img src="/badges/get-it-on-pwamart-light.svg" alt="Get it on pwamart" width="135" height="40"></p>
     <div class="term"><div>[![Get it on pwamart](${e(site)}/badges/get-it-on-pwamart.svg)](${e(site)}/apps/YOUR-SLUG)</div></div>
     <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
+    <h3 style="margin-top:22px">The live badge (rating + installs) and the ✓</h3>
+    <p><code>${e(site)}/apps/YOUR-SLUG/badge.svg</code> (add <code>?theme=light</code>) shows your rating and installs. Or key it by your homepage, one line for any site: <code>${e(site)}/for.svg?site=https://your.app/</code> linking <code>${e(site)}/for?site=https://your.app/</code>; a site with no listing yet shows "List your PWA free". When your homepage links to your listing (or <code>/for</code>), the listing gets the ✓ and a followed link to your site. We re-check daily.</p>
+    <div class="term"><div>&lt;a href="${e(site)}/for?site=https://your.app/"&gt;&lt;img src="${e(site)}/for.svg?site=https://your.app/" alt="Get it on pwamart" width="200" height="44" loading="lazy"&gt;&lt;/a&gt;</div></div>
+    <p class="muted" style="margin-top:8px">API: <code>GET /api/v1/apps/YOUR-SLUG/badge</code>, <code>GET /api/v1/badge?site=</code>, <code>POST /api/v1/apps/YOUR-SLUG/badge/check</code>. CLI: <code>pwamart badge YOUR-SLUG [--check]</code>. MCP: <code>get_badge</code>, <code>check_badge</code>.</p>
   </section>
   <section class="block" id="surfaces"><h2>4 · Your CLI, API, MCP server and desktop app</h2>
     <p>Every listing is a PWA. If your app is also a <span class="tag surf s-cli">CLI</span>, an <span class="tag surf s-api">API</span>, an <span class="tag surf s-mcp">MCP</span> server or a <span class="tag surf s-desktop">Desktop</span> app, the listing says so, shows how to install and use each one, and puts it in the <a href="/collections">collections</a> that install in one command. We look for them on your app's own origin each week, and when you press Refresh:</p>

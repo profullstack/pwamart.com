@@ -12,6 +12,8 @@ const d = HAS_DB ? describe : describe.skip;
 let app, auth, db, close, inspectMod, fixture, base;
 const token = { value: '' };
 const fixtureApps = new Map();
+// Extra HTML a fixture app's page carries (the badge backlink tests put a link here).
+const fixtureExtra = new Map();
 
 function fixturePage(name, { manifest = true } = {}) {
   return `<!doctype html><html><head><title>${name}</title>
@@ -77,7 +79,7 @@ beforeAll(async () => {
           : new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
       if (file?.endsWith('.png')) return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]), { headers: { 'content-type': 'image/png' } });
       fixtureApps.set(name, true);
-      return new Response(fixturePage(name), { headers: { 'content-type': 'text/html' } });
+      return new Response(fixturePage(name).replace('</body>', `${fixtureExtra.get(name) ?? ''}</body>`), { headers: { 'content-type': 'text/html' } });
     },
   });
   base = `http://localhost:${fixture.port}`;
@@ -337,6 +339,86 @@ d('store end to end', () => {
       expect(r.status).toBe(200);
     }
     expect((await app.request('/badges/..%2Fapi.js')).status).toBe(404);
+  });
+
+  test('badge: live SVG per listing and by site; /for redirects; unlisted invites to list', async () => {
+    const svg = await app.request('/apps/notes/badge.svg');
+    expect(svg.status).toBe(200);
+    expect(svg.headers.get('content-type')).toContain('image/svg+xml');
+    expect(svg.headers.get('access-control-allow-origin')).toBe('*');
+    const body = await svg.text();
+    expect(body).toContain('width="200" height="44"');
+    expect(body).toContain('install');
+    expect(await (await app.request('/apps/notes/badge.svg?theme=light')).text()).toContain('fill="#fff"');
+    expect((await app.request('/apps/nope-nope/badge.svg')).status).toBe(404);
+
+    const site = encodeURIComponent(`${base}/`);
+    const listed = await (await app.request(`/for.svg?site=${site}`)).text();
+    expect(listed).toContain('GET IT ON');
+    const go = await app.request(`/for?site=${site}`);
+    expect(go.status).toBe(302);
+    expect(go.headers.get('location')).toMatch(/^\/apps\/(notes|todo)\?ref=badge$/);
+
+    const none = await app.request('/for.svg?site=https://not-listed.example/');
+    expect(none.status).toBe(200);
+    expect(await none.text()).toContain('LIST YOUR PWA FREE');
+    expect((await app.request('/for?site=https://not-listed.example/')).headers.get('location')).toBe('/console/submit?ref=badge');
+    expect((await app.request('/for')).headers.get('location')).toBe('/console/submit?ref=badge');
+  });
+
+  test('badge: API snippets, owner check verifies a backlink, removing it un-verifies; MCP + page follow', async () => {
+    const r = await anon('GET', '/apps/notes/badge');
+    expect(r.status).toBe(200);
+    expect(r.body.html).toContain('http://localhost:3999/apps/notes/badge.svg');
+    expect(r.body.markdown).toContain('(http://localhost:3999/apps/notes?ref=badge)');
+    expect(r.body.verified).toBe(false);
+    const bySite = await anon('GET', `/badge?site=${encodeURIComponent(`${base}/notes/`)}`);
+    expect(bySite.body.listed).toBe(true);
+    expect((await anon('GET', '/badge?site=https://not-listed.example/')).body.listed).toBe(false);
+    expect((await anon('GET', '/badge')).status).toBe(400);
+
+    // Only the owner can ask for a check.
+    expect((await anon('POST', '/apps/notes/badge/check')).status).toBe(401);
+    const miss = await call('POST', '/apps/notes/badge/check');
+    expect(miss.status).toBe(200);
+    expect(miss.body.verified).toBe(false);
+    let page = await (await app.request('/apps/notes')).text();
+    expect(page).toContain('id="badge"');
+    expect(page).toContain('rel="noopener nofollow ugc"');
+
+    fixtureExtra.set('notes', `<a href="http://localhost:3999/apps/notes?ref=badge"><img src="http://localhost:3999/apps/notes/badge.svg"></a>`);
+    const hit = await call('POST', '/apps/notes/badge/check');
+    expect(hit.body.verified).toBe(true);
+    expect(hit.body.found_on).toContain('/notes/');
+    page = await (await app.request('/apps/notes')).text();
+    expect(page).toContain('links back');
+    expect((await anon('GET', '/apps/notes')).body.app.badge_verified).toBe(true);
+
+    // The footer's by-site link counts too.
+    fixtureExtra.set('notes', `<a href="https://pwamart.com/for?site=${encodeURIComponent(`${base}/`)}">x</a>`);
+    expect((await call('POST', '/apps/notes/badge/check')).body.verified).toBe(true);
+
+    fixtureExtra.delete('notes');
+    expect((await call('POST', '/apps/notes/badge/check')).body.verified).toBe(false);
+
+    const mcp = await app.request('/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_badge', arguments: { slug: 'notes' } } }),
+    });
+    expect((await mcp.json()).result.content[0].text).toContain('/apps/notes/badge.svg');
+  });
+
+  test('badge: the daemon checks never-checked listings first', async () => {
+    const { runBadgeChecks } = await import('../apps/web/src/badge.js');
+    await db()`update apps set badge_checked_at = null`;
+    fixtureExtra.set('todo', '<a href="http://localhost:3999/apps/todo">todo on pwamart</a>');
+    const r = await runBadgeChecks({ batch: 50, siteUrl: 'http://localhost:3999' });
+    expect(r.checked).toBeGreaterThan(0);
+    const [t] = await db()`select badge_verified_at from apps where slug = 'todo'`;
+    expect(t.badge_verified_at).not.toBeNull();
+    expect((await runBadgeChecks({ batch: 50, siteUrl: 'http://localhost:3999' })).checked).toBe(0);
+    fixtureExtra.delete('todo');
   });
 
   test('page values are escaped', async () => {

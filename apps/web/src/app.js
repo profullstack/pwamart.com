@@ -18,6 +18,7 @@ import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, i
 import { surfaceKey } from './surfaces.js';
 import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
+import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, theme as badgeTheme } from './badge.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 
@@ -424,6 +425,42 @@ app.get('/badges/:name{[a-z0-9-]+(@[23]x)?\\.(svg|png)}', (c) => {
     return c.text('no such badge', 404);
   }
 });
+// The live embeddable badge (rating + installs; badge.js). One listing's, or by
+// site for snippets shared across many sites (the Profullstack footer): a site
+// with no listing gets "List your PWA free" and /for sends it to submit.
+const SVG_HEADERS = (maxAge) => ({
+  'content-type': 'image/svg+xml; charset=utf-8',
+  'cache-control': `public, max-age=${maxAge}`,
+  'access-control-allow-origin': '*',
+  'cross-origin-resource-policy': 'cross-origin',
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+});
+// Every page view on every site carrying the footer asks for /for.svg: remember lookups a minute.
+const bySite = new Map();
+async function cachedBySite(site) {
+  const key = String(site ?? '').slice(0, 300);
+  const hit = bySite.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.row;
+  const row = configured() ? await appBySite(key).catch(() => null) : null;
+  if (bySite.size > 5000) bySite.clear();
+  bySite.set(key, { at: Date.now(), row });
+  return row;
+}
+app.get('/for.svg', async (c) => {
+  const row = await cachedBySite(c.req.query('site'));
+  const t = badgeTheme(c.req.query('theme'));
+  return row ? c.body(badgeSvg(row, t), 200, SVG_HEADERS(300)) : c.body(listBadgeSvg(t), 200, SVG_HEADERS(600));
+});
+app.get('/for', async (c) => {
+  const row = await cachedBySite(c.req.query('site'));
+  return c.redirect(row ? `/apps/${row.slug}?ref=badge` : '/console/submit?ref=badge', 302);
+});
+app.get('/apps/:slug/badge.svg', async (c) => {
+  const row = configured() ? await appBadgeRow(c.req.param('slug')).catch(() => null) : null;
+  if (!row) return c.body(listBadgeSvg(badgeTheme(c.req.query('theme'))), 404, SVG_HEADERS(60));
+  return c.body(badgeSvg(row, badgeTheme(c.req.query('theme'))), 200, SVG_HEADERS(300));
+});
+app.get('/publish', (c) => c.redirect('/console/submit', 302));
 app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript' }));
 // Aliases: the same script with its mode preset, so `curl … | sh` is all anyone types.
 const withMode = (mode) => INSTALL_SH.replace(/^#!\/bin\/sh\n/, `#!/bin/sh\nPWAMART_MODE=\${PWAMART_MODE:-${mode}}\n`);
@@ -593,6 +630,9 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue + a free CrawlProof ad
 - GET  /network                            store counts + 30-day CrawlProof network reach (what featuring buys)
 - GET  /apps/:slug/featured                featured state, owed newsletter slot
+- GET  /apps/:slug/badge                   the live badge (rating + installs): image URLs, HTML + Markdown snippets, backlink state
+- GET  /badge?site=<homepage>              which listing a site is, and its badge (listed: false when none)
+- POST /apps/:slug/badge/check             re-check the homepage for a link back now (owner); verified = ✓ + followed link
 - POST /newsletter/subscribe {email}       double opt-in (public)
 
 ## Get featured
@@ -614,15 +654,21 @@ Apps grouped by agentic workflow. Each installs in one command:
 - ${config.siteUrl}/collections/<slug>/mcp.json                        every member's MCP server as an mcpServers config
 Collections: ${COLLECTIONS.map((x) => x.slug).join(', ')}
 
+## Badge
+- ${config.siteUrl}/apps/<slug>/badge.svg?theme=light|dark      live rating + installs
+- ${config.siteUrl}/for.svg?site=<homepage> linking ${config.siteUrl}/for?site=<homepage>   one snippet for any site; unlisted = "List your PWA free"
+A homepage that links back earns the listing the ✓ and a followed link (re-checked daily).
+
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)
 - stdio: npx -y @profullstack/pwamart-mcp   (PWAMART_API_KEY for publishing tools)
-Tools: search_apps (surface=cli|api|mcp|desktop), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app
+Tools: search_apps (surface=cli|api|mcp|desktop), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app, get_badge, check_badge
 
 ## CLI + TUI
 - curl -fsSL ${config.siteUrl}/install.sh | sh    (or npm i -g @profullstack/pwamart)
 - pwamart search <q> [--surface cli|api|mcp|desktop] | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
 - pwamart collections [slug]   agentic workflow collections and their one-command installs
+- pwamart badge <slug> [--check] [--light] | pwamart badge --site <homepage>   badge snippets, backlink check
 - pwamart login (OAuth 2.1, browser; --manual over SSH) | logout | whoami | upgrade | uninstall
 - curl -fsSL ${config.siteUrl}/upgrade.sh | sh ; curl -fsSL ${config.siteUrl}/uninstall.sh | sh
 

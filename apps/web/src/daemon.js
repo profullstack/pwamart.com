@@ -241,6 +241,16 @@ addJob('surface-probe', 60_000, async () => {
   if (r.checked) console.log(`[daemon] surface-probe ${JSON.stringify(r)}`);
 });
 
+/* ---------------------------------------------------------------- badge -- */
+
+// Does each listing's homepage link back (the badge)? ✓ + a followed link when it does.
+addJob('badge-check', 60_000, async () => {
+  if (process.env.BADGE_CHECK === 'off') return;
+  const { runBadgeChecks } = await import('./badge.js');
+  const r = await runBadgeChecks({ siteUrl: config.siteUrl });
+  if (r.checked) console.log(`[daemon] badge-check ${JSON.stringify(r)}`);
+});
+
 /* ------------------------------------------------- featured + newsletter -- */
 
 // A paid feature comes off the home page when its week is up (staff picks never do).

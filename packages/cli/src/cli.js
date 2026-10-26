@@ -41,6 +41,8 @@ Publish
   pwamart apps                           your apps and their status
   pwamart surfaces <slug> [--cli URL|false] [--w3bs host/name] [--mcp URL|false] [--mcp-stdio "npx -y pkg"] [--api URL|false] [--openapi URL] [--desktop URL|false]
                                          say where your app's CLI, MCP server and API are (what you set wins)
+  pwamart badge <slug> [--check] [--light]   the live badge for your site (HTML + Markdown); --check re-checks the link back
+  pwamart badge --site <homepage>        which listing a site is, and its badge
   pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
   pwamart releases <slug>                what's new in an app
@@ -352,6 +354,31 @@ export async function main(argv = process.argv.slice(2)) {
     case 'publish': {
       const r = await api.publish(auth, rest[0]);
       out(r, `✓ ${rest[0]} is ${r.status}: ${auth.server}/apps/${rest[0]}`);
+      return 0;
+    }
+    case 'badge': {
+      if (flags.site) {
+        const r = await api.badgeForSite(auth, flags.site);
+        out(r, r.listed ? [`${r.site} is ${r.app}: ${r.page}`, '', r.by_site].join('\n') : [`${r.site} is not listed yet. List it free: ${r.submit}`, '', `<a href="${r.link}"><img src="${r.image}" alt="Get it on pwamart" width="200" height="44" loading="lazy"></a>`].join('\n'));
+        return 0;
+      }
+      if (!rest[0]) throw new Error('usage: pwamart badge <slug> [--check] [--light] | pwamart badge --site <homepage>');
+      const r = flags.check ? await api.checkBadge(auth, rest[0]) : await api.badge(auth, rest[0]);
+      const light = Boolean(flags.light);
+      out(
+        r,
+        [
+          `${r.name}: ${r.verified ? '✓ its site links back (followed link)' : `no link back found yet${r.checked_at ? ` (checked ${String(r.checked_at).slice(0, 16).replace('T', ' ')})` : ''}`}`,
+          ...(flags.check && !r.verified ? [`looked at: ${(r.looked ?? []).join(', ')}`] : []),
+          '',
+          'HTML:',
+          `  ${light ? r.html_light : r.html}`,
+          '',
+          'Markdown:',
+          `  ${light ? r.markdown_light : r.markdown}`,
+          ...(r.verified ? [] : ['', r.how]),
+        ].join('\n'),
+      );
       return 0;
     }
     case 'feature': {

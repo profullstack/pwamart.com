@@ -320,14 +320,52 @@ async function appDetail(slug, note = '') {
       <label class="f">Tags <small>Comma separated, up to 10.</small><input name="tags" value="${esc(app.tags.join(', '))}"></label>
       <div class="row"><button class="btn dark">Save</button><span id="emsg"></span></div>
     </form>
-    <div class="panel" style="margin-top:28px"><h3>Share it</h3>
-      <div class="code-block">&lt;a href="${esc(location.origin)}/apps/${esc(app.slug)}"&gt;&lt;img src="${esc(location.origin)}/badge.svg" alt="Get it on pwamart" height="48"&gt;&lt;/a&gt;</div>
+    <div class="panel" style="margin-top:28px" id="badge-panel"><h3>Badge</h3>
+      ${
+        app.status === 'published'
+          ? `<p class="muted" style="font-size:13px">A live badge for your site: rating + installs, linking to your listing. When ${esc(app.url)} links back, the listing gets the ✓ and a followed link to your site.</p>
+      <p style="display:flex;gap:10px;flex-wrap:wrap"><img src="/apps/${esc(app.slug)}/badge.svg" alt="badge" width="200" height="44"><img src="/apps/${esc(app.slug)}/badge.svg?theme=light" alt="badge, light" width="200" height="44"></p>
+      <div id="badge-snips"><p class="muted">Loading…</p></div>
+      <div class="row"><button class="btn sm" id="badgecheck">I added it: check</button><span id="bmsg">${app.badge_verified ? '<span class="ok-msg">✓ Your site links back.</span>' : ''}</span></div>`
+          : '<p class="muted" style="font-size:13px">Publish the app to get its live badge.</p>'
+      }
       <p class="muted" style="font-size:13px">Terminal: <code>npx -y @profullstack/pwamart install ${esc(app.slug)}</code> · iOS profile: <a href="/apps/${esc(app.slug)}/install.mobileconfig">/apps/${esc(app.slug)}/install.mobileconfig</a></p>
     </div>
     <p style="margin-top:30px"><button class="btn sm" id="remove">Remove this app</button></p>`;
 
   const act = (id, fn) => $(id)?.addEventListener('click', fn);
   const msg = (id, html) => ($(id).innerHTML = html);
+  const showBadge = (b) => {
+    const box = $('#badge-snips');
+    if (!box) return;
+    box.innerHTML = [
+      ['HTML', b.html],
+      ['Markdown', b.markdown],
+      ['HTML, light', b.html_light],
+    ]
+      .map(([label, v]) => `<p class="muted" style="font-size:12.5px;margin:10px 0 4px">${label} <button class="btn sm" type="button" data-copy="${esc(v)}">Copy</button></p><div class="code-block">${esc(v)}</div>`)
+      .join('');
+    box.querySelectorAll('[data-copy]').forEach((btn) =>
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          btn.textContent = 'Copied';
+          setTimeout(() => (btn.textContent = 'Copy'), 1400);
+        } catch {}
+      }),
+    );
+  };
+  if (app.status === 'published') api(`/apps/${slug}/badge`).then(showBadge, () => {});
+  act('#badgecheck', async () => {
+    msg('#bmsg', '<span class="muted">Checking your homepage…</span>');
+    try {
+      const r = await api(`/apps/${slug}/badge/check`, { method: 'POST' });
+      showBadge(r);
+      msg('#bmsg', r.verified ? `<span class="ok-msg">✓ Found the link on ${esc(r.found_on)}.</span>` : `<span class="muted">No link to your listing yet on ${esc((r.looked ?? []).join(' or '))}. Deploy the snippet, then check again.</span>`);
+    } catch (err) {
+      msg('#bmsg', errBox(err));
+    }
+  });
   act('#verify', async () => {
     msg('#vmsg', '<span class="muted">Checking…</span>');
     try {

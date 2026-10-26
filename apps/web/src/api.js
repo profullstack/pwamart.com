@@ -16,6 +16,7 @@ import { allCollections, collectionApps, getCollection, summarize } from './coll
 import { sharedHost } from './shared-hosts.js';
 import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
+import { appBadgeRow, appBySite, badgeSnippets, checkBadge, siteHost, siteSnippet } from './badge.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -310,6 +311,54 @@ api.post('/apps/:slug/installs', async (c) => {
   const user = await currentUser(c).catch(() => null);
   const m = await recordInstall(row.id, str(method, 20) ?? 'web', user?.id ?? null);
   return c.json({ ok: true, method: m, start_url: row.start_url ?? row.url, manifest_id: row.manifest_id });
+});
+
+/* ---------------------------------------------------------------- badge -- */
+
+/** Everything to put the live badge on a site: image URLs, HTML + Markdown, the backlink state. */
+export function badgePayload(row, siteUrl = config.siteUrl) {
+  const snip = badgeSnippets(row, siteUrl);
+  return {
+    app: row.slug,
+    name: row.name,
+    page: snip.page,
+    image: snip.dark.image,
+    image_light: snip.light.image,
+    html: snip.dark.html,
+    markdown: snip.dark.markdown,
+    html_light: snip.light.html,
+    markdown_light: snip.light.markdown,
+    // One line for any site, keyed by its homepage (what the Profullstack footer uses).
+    by_site: siteSnippet(siteUrl, row.url),
+    verified: Boolean(row.badge_verified_at),
+    verified_at: row.badge_verified_at ?? null,
+    checked_at: row.badge_checked_at ?? null,
+    how: `Put the HTML (or Markdown) on ${row.url}. Once that page links to ${siteUrl}/apps/${row.slug} (or ${siteUrl}/for), the listing gets the ✓ and a followed link to your site. We re-check daily; POST /api/v1/apps/${row.slug}/badge/check checks now.`,
+  };
+}
+
+api.get('/badge', async (c) => {
+  const site = c.req.query('site');
+  if (!siteHost(site)) fail(400, 'pass ?site=<homepage URL>');
+  const row = await appBySite(site);
+  const s = encodeURIComponent(site);
+  if (!row)
+    return c.json({ listed: false, site, image: `${config.siteUrl}/for.svg?site=${s}`, link: `${config.siteUrl}/for?site=${s}`, submit: `${config.siteUrl}/console/submit?ref=badge` });
+  return c.json({ listed: true, site, ...badgePayload(row), by_site: siteSnippet(config.siteUrl, site) });
+});
+
+api.get('/apps/:slug/badge', async (c) => {
+  const row = await appBadgeRow(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such published app' }, 404);
+  return c.json(badgePayload(row));
+});
+
+api.post('/apps/:slug/badge/check', async (c) => {
+  const { row: app } = await appFor(c, c.req.param('slug'));
+  const row = await appBadgeRow(app.slug);
+  if (!row) fail(409, 'publish the app first: only published listings have a badge');
+  const r = await checkBadge(row, { siteUrl: config.siteUrl });
+  return c.json({ ...badgePayload({ ...row, badge_verified_at: r.verified_at, badge_checked_at: r.checked_at }), found_on: r.found_on, looked: r.looked });
 });
 
 api.get('/apps/:slug/reviews', async (c) => {

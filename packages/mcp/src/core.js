@@ -110,6 +110,21 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
+    name: 'get_badge',
+    description:
+      'The live "Get it on pwamart" badge (rating + installs) for a listing, as HTML and Markdown snippets to paste on the app\'s site, plus whether its homepage links back (the ✓ and a followed link). Pass slug, or site (a homepage URL) to find which listing a site is.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, site: { type: 'string', description: 'a homepage URL, instead of slug' } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'check_badge',
+    description: "Re-check the app's homepage for a link back to its pwamart listing now (the badge). Verified earns the ✓ and a followed link. Needs an API key for an app you publish.",
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
     name: 'get_releases',
     description: "What's new in an app: its releases (published by the developer or detected from manifest changes), newest first.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
@@ -202,6 +217,13 @@ export async function callTool(name, args, call, siteUrl) {
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/publish`, json('POST')));
     case 'feature_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/feature`, json('POST')));
+    case 'get_badge': {
+      if (args.site) return text(await call(`/badge?${q({ site: args.site })}`));
+      if (!args.slug) throw new Error('pass slug or site');
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/badge`));
+    }
+    case 'check_badge':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/badge/check`, json('POST')));
     case 'get_releases':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/releases`));
     case 'follow':
