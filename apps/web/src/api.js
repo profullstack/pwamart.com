@@ -19,6 +19,8 @@ import * as newsletter from './newsletter.js';
 import { appBadgeRow, appBySite, badgeSnippets, checkBadge, siteHost, siteSnippet } from './badge.js';
 import * as karma from './karma.js';
 import { CommentError, addComment, commentsFor, deleteComment, payReview, share as shareApp, unvote, upvote, voteState } from './community.js';
+import { mountProfileRoutes, validateProfile } from '@profullstack/profile';
+import { profiles } from './user-profile.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -168,12 +170,21 @@ async function personalOrg(user) {
 /* -------------------------------------------------------------- sign-in -- */
 
 api.post('/auth/link', async (c) => {
-  const { email } = await body(c);
-  const e = str(email, 254)?.toLowerCase();
+  const fields = await body(c);
+  const e = str(fields.email, 254)?.toLowerCase();
   if (!e || !EMAIL.test(e)) return c.json({ error: 'enter a valid email address' }, 400);
+  // The sign-up form carries the shared profile fields (@profullstack/profile);
+  // plain sign-in does not and is never asked for them. Checked before any link
+  // exists; the fields ride the token and are saved when the link is spent.
+  let profile = null;
+  if (fields.signup === true) {
+    const check = validateProfile({ ...fields, email: e });
+    if (!check.ok) return c.json({ error: 'some fields need fixing', errors: check.errors }, 400);
+    profile = check.profile;
+  }
   // Same answer whether or not the address has an account.
   try {
-    await sendLoginLink({ email: e, url: await auth.createLoginLink(e) });
+    await sendLoginLink({ email: e, url: await auth.createLoginLink(e, { profile }) });
   } catch (err) {
     console.error(`[auth] could not send link: ${err?.message ?? err}`);
   }
@@ -208,6 +219,17 @@ api.post('/auth/passkey/login/verify', async (c) => {
 });
 
 /* ------------------------------------------------------------- account -- */
+
+// GET/PUT/PATCH /api/v1/me/profile: the package's own handlers, for any caller
+// (session, API key or OAuth token). CoinPay and passkey accounts fill it here.
+mountProfileRoutes(api, {
+  path: '/me/profile',
+  store: profiles,
+  getUser: async (_req, c) => {
+    const user = await currentUser(c);
+    return user ? { id: user.id, email: user.email } : null;
+  },
+});
 
 api.get('/me', async (c) => {
   const user = await requireUser(c);

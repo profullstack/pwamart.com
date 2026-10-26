@@ -1322,3 +1322,74 @@ d('the publisher directory', () => {
     expect(home).toContain('href="/publishers"');
   });
 });
+
+d('signup profile (@profullstack/profile)', () => {
+  const link = (body) =>
+    app.request('/api/v1/auth/link', { method: 'POST', headers: { 'x-real-ip': '203.0.113.77', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  test('the console shell carries the fields, and the helper script is served', async () => {
+    const page = await (await app.request('/signup')).text();
+    for (const name of ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url'])
+      expect(page.match(new RegExp(`name="${name}"`, 'g'))?.length).toBe(1);
+    expect(page).toContain('<template id="profile-fields">');
+    expect((await app.request('/signin')).status).toBe(200);
+    expect((await app.request('/assets/profile.js')).headers.get('content-type')).toContain('javascript');
+  });
+
+  test('a signup without a last name is refused before any link exists', async () => {
+    const res = await link({ signup: true, email: 'nolast@acme.example', first_name: 'Ada' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).errors.last_name).toBeTruthy();
+    const [{ n }] = await db()`select count(*)::int as n from login_tokens where email = 'nolast@acme.example'`;
+    expect(n).toBe(0);
+  });
+
+  test('signup fields ride the token and are saved when the link is spent', async () => {
+    const email = 'ada@acme.example';
+    const res = await link({
+      signup: true,
+      email: 'Ada@Acme.example',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      company_domain: 'https://www.acme.example/about',
+      job_title: 'VP Engineering',
+      linkedin_url: 'in/ada-lovelace',
+    });
+    expect(res.status).toBe(200);
+    const [token] = await db()`select profile from login_tokens where email = ${email}`;
+    expect(token?.profile).toMatchObject({ first_name: 'Ada', last_name: 'Lovelace', job_title: 'VP Engineering' });
+
+    // The route's link went to the mailer; mint one the same way to spend it here.
+    const url = new URL(await auth.createLoginLink(email, { profile: token.profile }));
+    const spent = await app.request(url.pathname + url.search);
+    expect(spent.status).toBe(302);
+    const cookie = spent.headers.get('set-cookie').split(';')[0];
+    const me = await app.request('/api/v1/me/profile', { headers: { cookie } });
+    expect(me.status).toBe(200);
+    expect((await me.json()).profile).toMatchObject({
+      email,
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      company_domain: 'acme.example',
+      job_title: 'VP Engineering',
+      linkedin_url: 'https://www.linkedin.com/in/ada-lovelace',
+    });
+    const [{ n }] = await db()`select count(*)::int as n from login_tokens where email = ${email} and used_at is not null and profile is not null`;
+    expect(n).toBe(0);
+
+    const patched = await app.request('/api/v1/me/profile', {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ job_title: 'CTO' }),
+    });
+    expect((await patched.json()).profile).toMatchObject({ job_title: 'CTO', last_name: 'Lovelace' });
+  });
+
+  test('plain sign-in carries no profile, and the profile API is 401 signed out', async () => {
+    expect((await link({ email: 'plain@acme.example' })).status).toBe(200);
+    const [row] = await db()`select profile from login_tokens where email = 'plain@acme.example'`;
+    expect(row.profile).toBeNull();
+    const res = await app.request('/api/v1/me/profile');
+    expect(res.status).toBe(401);
+  });
+});
