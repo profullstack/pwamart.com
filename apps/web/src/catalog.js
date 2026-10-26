@@ -12,7 +12,7 @@ const PUBLIC_FIELDS = (sql) => sql`
   a.manifest_url, a.icon_url, a.screenshots, a.theme_color, a.background_color, a.display,
   a.category, a.tags, a.features, a.offline_reason, a.surfaces, a.surfaces_set, a.surface_keys, a.status, a.featured, a.installs, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
-  a.verified_at is not null as verified, a.check_report, a.checked_at, a.published_at, a.updated_at,
+  a.verified_at is not null as verified, a.badge_verified_at, a.check_report, a.checked_at, a.published_at, a.updated_at,
   p.slug as publisher_slug, p.name as publisher_name, p.avatar_url as publisher_avatar, p.verified as publisher_verified, p.claimable as publisher_claimable, p.claim_domain as publisher_claim_domain`;
 
 export function shape(row) {
@@ -46,6 +46,8 @@ export function shape(row) {
     rating: row.rating === null || row.rating === undefined ? null : Number(row.rating),
     rating_count: row.rating_count,
     verified: row.verified,
+    badge_verified: Boolean(row.badge_verified_at),
+    badge_verified_at: row.badge_verified_at ?? null,
     installable: report.installable ?? null,
     score: report.score ?? null,
     checks: report.checks ?? [],
@@ -57,6 +59,7 @@ export function shape(row) {
       page: `/apps/${row.slug}`,
       ios_profile: `/apps/${row.slug}/install.mobileconfig`,
       cli: `npx -y @profullstack/pwamart install ${row.slug}`,
+      badge: `/apps/${row.slug}/badge.svg`,
     },
   };
 }

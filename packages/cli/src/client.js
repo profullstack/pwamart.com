@@ -105,4 +105,7 @@ export const managePublisher = (auth, slug) => call(auth, `${pub(slug)}/manage`)
 export const updatePublisher = (auth, slug, body) => call(auth, pub(slug), { method: 'PATCH', body: JSON.stringify(body) });
 export const verifyPublisher = (auth, slug) => call(auth, `${pub(slug)}/verify`, post());
 export const autofillPublisher = (auth, slug, url) => call(auth, `${pub(slug)}/autofill`, post(url ? { url } : {}));
+export const badge = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/badge`);
+export const badgeForSite = (auth, site) => call(auth, `/badge?${qs({ site })}`);
+export const checkBadge = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/badge/check`, post());
 export const inspect = (auth, url) => call(auth, '/inspect', post({ url }));
