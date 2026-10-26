@@ -129,7 +129,8 @@ const FIELDS = (sql) => sql`
 /**
  * The published listing for a site (any page of it): an app on that host, the
  * one whose URL is the homepage first, then the most installed. `www.` is the
- * same site.
+ * same site; a site whose web app lives at `app.<host>` (moshcode.sh ->
+ * app.moshcode.sh) gets that listing when the host itself has none.
  */
 export async function appBySite(site) {
   const host = siteHost(site);
@@ -138,8 +139,9 @@ export async function appBySite(site) {
   const [row] = await sql`
     select ${FIELDS(sql)} from apps a
     where a.status = 'published'
-      and lower(regexp_replace(regexp_replace(a.origin, '^https?://', ''), '^www\\.', '')) = ${host}
-    order by (lower(regexp_replace(a.url, '^https?://(www\\.)?', '')) in (${host}, ${`${host}/`})) desc, a.installs desc, a.published_at
+      and lower(regexp_replace(regexp_replace(a.origin, '^https?://', ''), '^www\\.', '')) in (${host}, ${`app.${host}`})
+    order by (lower(regexp_replace(regexp_replace(a.origin, '^https?://', ''), '^www\\.', '')) = ${host}) desc,
+      (lower(regexp_replace(a.url, '^https?://(www\\.)?', '')) in (${host}, ${`${host}/`})) desc, a.installs desc, a.published_at
     limit 1`;
   return row ?? null;
 }
