@@ -357,21 +357,24 @@ export async function checkClaim(claim, sql = db()) {
     await tx`update publishers set org_id = ${personal.id}, claimable = false, created_by = ${claim.user_id},
              bio = case when bio like 'Imported from %' then null else bio end where id = ${claim.publisher_id}`;
     const apps = await tx`update apps set verified_at = now(), verified_by = ${method}, created_by = ${claim.user_id}
-                          where publisher_id = ${claim.publisher_id} returning slug`;
+                          where publisher_id = ${claim.publisher_id} returning id, slug`;
     await tx`update publisher_claims set status = 'verified', verified_at = now(), last_checked_at = now(),
              last_result = 'found', checks = checks + 1 where id = ${claim.id}`;
     await tx`update publisher_claims set status = 'superseded' where publisher_id = ${claim.publisher_id} and status = 'pending'`;
-    return apps.length;
+    return apps;
   });
   if (moved === null) {
     await sql`update publisher_claims set status = 'superseded', last_result = 'claimed by someone else first' where id = ${claim.id}`;
     return { status: 'superseded', result: 'claimed by someone else first' };
   }
+  // Ownership proven: +5 karma per listing, once each (karma.js dedupes).
+  const { award } = await import('./karma.js');
+  for (const a of moved) await award({ userId: claim.user_id, action: 'verify', ref: a.id, appId: a.id }).catch((err) => console.error(`[claims] karma: ${err.message}`));
   const [info] = await sql`select u.email, p.name, p.slug from users u, publishers p where u.id = ${claim.user_id} and p.id = ${claim.publisher_id}`;
-  sendClaimVerified({ email: info.email, publisher: info.name, apps: moved, url: `${config.siteUrl}/console/publishers` }).catch((err) =>
+  sendClaimVerified({ email: info.email, publisher: info.name, apps: moved.length, url: `${config.siteUrl}/console/publishers` }).catch((err) =>
     console.error(`[claims] mail: ${err.message}`),
   );
-  return { status: 'verified', result: 'found', apps: moved };
+  return { status: 'verified', result: 'found', apps: moved.length };
 }
 
 /** Daemon turn: every pending claim whose next check is due. */

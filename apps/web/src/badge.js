@@ -187,7 +187,13 @@ export async function checkBadge(row, { siteUrl, fetchFn = safeFetch } = {}) {
       badge_verified_at = ${found ? sql`coalesce(badge_verified_at, now())` : null},
       badge_checked_at = now()
     where id = ${row.id}
-    returning badge_verified_at, badge_checked_at`;
+    returning badge_verified_at, badge_checked_at, publisher_id`;
+  // The badge shown and verified: +5 karma to the listing's owner, once per listing.
+  if (found && after) {
+    const { award, ownerOf } = await import('./karma.js');
+    const owner = await ownerOf(after.publisher_id).catch(() => null);
+    if (owner) await award({ userId: owner, action: 'badge', ref: row.id, appId: row.id }).catch((err) => console.error(`[badge] karma: ${err.message}`));
+  }
   return { verified: Boolean(found), found_on: found, looked: urls, verified_at: after?.badge_verified_at ?? null, checked_at: after?.badge_checked_at ?? null };
 }
 

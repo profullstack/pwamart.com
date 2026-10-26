@@ -12,7 +12,7 @@ import { installApp } from './install.js';
 const HELP = `pwamart: find and install web apps (PWAs) on any device.
 
 Browse
-  pwamart search [query] [--category C] [--sort top|new|rating] [--offline] [--surface cli|api|mcp|desktop] [--json]
+  pwamart search [query] [--category C] [--sort top|votes|new|rating] [--offline] [--surface cli|api|mcp|desktop] [--json]
   pwamart browse [--category C] [--offline]   the same list; --offline: only apps that work offline
   pwamart info <slug> [--json]
   pwamart install <slug> [--no-launch]   open it as an app window + add a launcher entry
@@ -21,6 +21,15 @@ Browse
   pwamart categories
   pwamart collections [slug] [--json]    agentic workflow collections + their one-command installs
   pwamart tui                            the store in your terminal (hqtui)
+
+Karma (signed in; every 500 karma is a free Featured week)
+  pwamart karma [--json]                 your karma, rank, badges, free weeks, history, how to earn
+  pwamart leaderboard [--period week|month|all] [--limit N]
+  pwamart vote <slug> [--remove]         upvote an app (one per app)
+  pwamart review <slug> --rating 1-5 [--text "…"]   30+ characters earns 5 karma
+  pwamart comments <slug>                an app's comments
+  pwamart comment <slug> "text" [--reply <id>]       comment or reply
+  pwamart comment delete <id>            delete your comment (its karma goes back)
 
 Account (OAuth 2.1: opens your browser, no keys to paste)
   pwamart login [--manual]               sign in; --manual prints a URL + asks for a code (SSH)
@@ -43,7 +52,7 @@ Publish
                                          say where your app's CLI, MCP server and API are (what you set wins)
   pwamart badge <slug> [--check] [--light]   the live badge for your site (HTML + Markdown); --check re-checks the link back
   pwamart badge --site <homepage>        which listing a site is, and its badge
-  pwamart feature <slug>                 $19: 7 days featured + the next newsletter (CoinPay)
+  pwamart feature <slug> [--credit]      $19: 7 days featured + the next newsletter (CoinPay); --credit spends a free week
   pwamart subscribe <email>              the pwamart newsletter (double opt-in)
   pwamart releases <slug>                what's new in an app
   pwamart release <slug> --title T [--version V] [--notes N]   post a release (followers are notified)
@@ -381,8 +390,73 @@ export async function main(argv = process.argv.slice(2)) {
       );
       return 0;
     }
+    case 'karma': {
+      const k = await api.karma(auth, { limit: flags.limit ?? 15 });
+      const n = k.next_credit;
+      out(k, [
+        `${k.total} karma (${k.week} this week)${k.rank.week ? ` · #${k.rank.week} this week` : ''}${k.rank.all ? ` · #${k.rank.all} all time` : ''}${k.badges.length ? ` · ${k.badges.map((b) => `${b.emoji} ${b.label}`).join(', ')}` : ''}`,
+        `Free Featured weeks: ${k.credits.available} to spend (${k.credits.granted} earned)${k.credits.available ? ' · pwamart feature <slug> --credit' : ''}`,
+        `Next free week: ${n.remaining} karma to go (at ${n.at})  [${'#'.repeat(Math.round(n.progress * 20)).padEnd(20, '.')}]`,
+        '',
+        ...(k.events.length ? k.events.map((e) => `${String(e.at).slice(0, 10)}  ${`${e.points > 0 ? '+' : ''}${e.points}`.padStart(4)}  ${e.label}${e.reversal ? ' (taken back)' : ''}${e.app ? `  ${e.app.slug}` : ''}`) : ['No karma yet.']),
+        '',
+        'How to earn:',
+        ...k.how_to_earn.map((r) => `  +${String(r.points).padEnd(3)} ${r.label}: ${r.rule}`),
+      ].join('\n'));
+      return 0;
+    }
+    case 'leaderboard':
+    case 'top': {
+      const r = await api.leaderboard(auth, { period: flags.period, limit: flags.limit ?? 20 });
+      out(r, [
+        `Top karma · ${r.fallback ? 'all time (nobody yet this period)' : { week: 'this week', month: 'this month', all: 'all time' }[r.period]}`,
+        ...(r.rows.length ? r.rows.map((x) => `${String(x.rank).padStart(3)}  ${x.name.slice(0, 28).padEnd(28)} ${String(x.display).padStart(7)}  ${x.badges.map((b) => b.emoji).join('')}`) : ['  Nobody yet: upvote, review or comment to be first.']),
+        '',
+        `${auth.server}/leaderboard`,
+      ].join('\n'));
+      return 0;
+    }
+    case 'vote':
+    case 'upvote': {
+      if (!rest[0]) throw new Error('usage: pwamart vote <slug> [--remove]');
+      const r = await api.vote(auth, rest[0], { remove: Boolean(flags.remove) });
+      out(r, `${r.voted ? '▲ upvoted' : 'vote removed:'} ${rest[0]} (${r.votes} vote${r.votes === 1 ? '' : 's'})${r.karma?.paid ? `  +${r.karma.points} karma` : ''}`);
+      return 0;
+    }
+    case 'review': {
+      const rating = Number(flags.rating);
+      if (!rest[0] || !Number.isInteger(rating)) throw new Error('usage: pwamart review <slug> --rating 1-5 [--text "…"]');
+      const r = await api.review(auth, rest[0], { rating, text: typeof flags.text === 'string' ? flags.text : undefined });
+      out(r, `✓ reviewed ${rest[0]} ${'★'.repeat(rating)}${r.karma?.paid ? `  +${r.karma.points} karma` : r.karma?.reason ? `  (${r.karma.reason})` : ''}`);
+      return 0;
+    }
+    case 'comments': {
+      if (!rest[0]) throw new Error('usage: pwamart comments <slug>');
+      const r = await api.comments(auth, rest[0]);
+      const line = (c, pad = '') => (c.deleted ? `${pad}[deleted]` : `${pad}${c.author} (${c.karma} karma) · ${String(c.created_at).slice(0, 10)} · ${c.id}\n${pad}  ${c.body.replace(/\n/g, `\n${pad}  `)}`);
+      out(r, r.comments.map((c) => [line(c), ...c.replies.map((x) => line(x, '    '))].join('\n')).join('\n\n') || 'No comments yet.');
+      return 0;
+    }
+    case 'comment': {
+      if (rest[0] === 'delete') {
+        if (!rest[1]) throw new Error('usage: pwamart comment delete <id>');
+        const r = await api.deleteComment(auth, rest[1]);
+        out(r, `✓ deleted${r.karma_reversed ? ` (${r.karma_reversed} karma)` : ''}`);
+        return 0;
+      }
+      const text = rest.slice(1).join(' ');
+      if (!rest[0] || !text) throw new Error('usage: pwamart comment <slug> "text" [--reply <comment id>]');
+      const r = await api.comment(auth, rest[0], { text, parent: typeof flags.reply === 'string' ? flags.reply : undefined });
+      out(r, `✓ commented on ${rest[0]} (${r.comment.id})${r.comment.karma?.paid ? `  +${r.comment.karma.points} karma` : ''}`);
+      return 0;
+    }
     case 'feature': {
-      if (!rest[0]) throw new Error('usage: pwamart feature <slug>');
+      if (!rest[0]) throw new Error('usage: pwamart feature <slug> [--credit]');
+      if (flags.credit) {
+        const r = await api.feature(auth, rest[0], { credit: true });
+        out(r, `✓ ${rest[0]} is featured until ${String(r.ends_at).slice(0, 10)} with a free week earned with karma (${r.credits_left} left)`);
+        return 0;
+      }
       const st = await api.featured(auth, rest[0]);
       const r = await api.feature(auth, rest[0]);
       out(

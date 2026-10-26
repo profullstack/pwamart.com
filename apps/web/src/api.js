@@ -17,6 +17,8 @@ import { sharedHost } from './shared-hosts.js';
 import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
 import { appBadgeRow, appBySite, badgeSnippets, checkBadge, siteHost, siteSnippet } from './badge.js';
+import * as karma from './karma.js';
+import { CommentError, addComment, commentsFor, deleteComment, payReview, share as shareApp, unvote, upvote, voteState } from './community.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -220,12 +222,15 @@ api.get('/me', async (c) => {
          where m.user_id = ${user.id} order by p.created_at`,
     db()`select count(*)::int as n from passkeys where user_id = ${user.id}`,
   ]);
+  const [k] = await db()`select coalesce((select sum(points) from karma_events where user_id = ${user.id}), 0)::int as total,
+                                (select count(*) from karma_credits where user_id = ${user.id} and spent_at is null)::int as credits`;
   return c.json({
     user: { id: user.id, email: user.email, name: user.name, admin: user.is_admin, passkeys: passkeys[0].n, coinpay: Boolean(user.coinpay_sub) },
     plan,
     usage,
     orgs: myOrgs.map((o) => ({ id: o.id, slug: o.slug, name: o.name, personal: o.is_personal, role: o.role })),
     publishers,
+    karma: { total: k.total, credits_available: k.credits, player: karma.playerId(user.id) },
   });
 });
 
@@ -371,17 +376,108 @@ api.post('/apps/:slug/reviews', async (c) => {
   const user = await requireUser(c);
   const row = await getApp(c.req.param('slug'));
   if (!row) return c.json({ error: 'no such app' }, 404);
-  const { rating, body: text } = await body(c);
+  const { rating, body: text_ } = await body(c);
   const r = Number(rating);
   if (!Number.isInteger(r) || r < 1 || r > 5) return c.json({ error: 'rating is 1 to 5' }, 400);
-  await db().begin(async (tx) => {
+  const text = str(text_, 4000);
+  const isNew = await db().begin(async (tx) => {
     const [old] = await tx`select rating from reviews where app_id = ${row.id} and user_id = ${user.id} for update`;
-    await tx`insert into reviews (app_id, user_id, rating, body) values (${row.id}, ${user.id}, ${r}, ${str(text, 4000)})
+    await tx`insert into reviews (app_id, user_id, rating, body) values (${row.id}, ${user.id}, ${r}, ${text})
              on conflict (app_id, user_id) do update set rating = excluded.rating, body = excluded.body, updated_at = now()`;
     await tx`update apps set rating_sum = rating_sum + ${r} - ${old?.rating ?? 0},
                              rating_count = rating_count + ${old ? 0 : 1} where id = ${row.id}`;
+    return !old;
   });
-  return c.json({ ok: true }, 201);
+  const paid = await payReview(row, user, { body: text, isNew });
+  return c.json({ ok: true, karma: paid }, 201);
+});
+
+/* ------------------------------------------- upvotes, comments, shares -- */
+
+api.get('/apps/:slug/vote', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  return c.json(await voteState(row, await currentUser(c).catch(() => null)));
+});
+
+/** Upvote: one per member per app. POST is idempotent; DELETE takes it back. */
+api.post('/apps/:slug/vote', async (c) => {
+  const user = await requireUser(c);
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  return c.json(await upvote(row, user));
+});
+api.delete('/apps/:slug/vote', async (c) => {
+  const user = await requireUser(c);
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  return c.json(await unvote(row, user));
+});
+
+const commentFail = (err) => {
+  if (err instanceof CommentError) fail(err.status, err.message);
+  throw err;
+};
+
+api.get('/apps/:slug/comments', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  const user = await currentUser(c).catch(() => null);
+  return c.json({ comments: await commentsFor(row.id, user), signed_in: Boolean(user) });
+});
+
+/** {body, parent?}: a comment, or a reply to one (one level deep). */
+api.post('/apps/:slug/comments', async (c) => {
+  const user = await requireUser(c);
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  const b = await body(c);
+  const r = await addComment(row, user, { body: b.body, parent: b.parent }).catch(commentFail);
+  return c.json({ comment: r }, 201);
+});
+
+/** The author, or staff. The comment's karma is taken back. */
+api.delete('/comments/:id', async (c) => {
+  const user = await requireUser(c);
+  return c.json(await deleteComment(c.req.param('id'), user).catch(commentFail));
+});
+
+/** A share-button click: {network: x|bluesky|linkedin|reddit|hn|mastodon|copy}. Anonymous works, earns nothing. */
+api.post('/apps/:slug/share', async (c) => {
+  const row = await getApp(c.req.param('slug'));
+  if (!row) return c.json({ error: 'no such app' }, 404);
+  const { network } = await body(c);
+  return c.json(await shareApp(row, await currentUser(c).catch(() => null), network));
+});
+
+/* ---------------------------------------------------------------- karma -- */
+
+/** Mine: total, this week, my rank, credits, the next free Featured week, history. */
+api.get('/karma', async (c) => {
+  const user = await requireUser(c);
+  const s = await karma.summary(user.id, { limit: c.req.query('limit') });
+  const lb = karma.leaderboard();
+  const [week, all] = await Promise.all([
+    lb.standing({ player: s.player, board: 'karma', period: 'week' }),
+    lb.standing({ player: s.player, board: 'karma', period: 'all' }),
+  ]);
+  return c.json({ ...s, staff: Boolean(user.is_admin), rank: { week: week?.rank ?? null, all: all?.rank ?? null }, badges: all?.badges ?? [] });
+});
+
+/** Public: the karma board. period week|month|all; falls back to all time when a week is empty (fallback=1 default). */
+api.get('/leaderboard', async (c) => {
+  const board = c.req.query('board') || 'karma';
+  if (board !== 'karma') return c.json({ error: 'unknown board; boards: karma' }, 404);
+  const period = ['week', 'month', 'all'].includes(c.req.query('period')) ? c.req.query('period') : 'week';
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 25, 1), 100);
+  const lb = karma.leaderboard();
+  let r = await lb.top({ board, period, limit, offset: Number(c.req.query('offset')) || 0 });
+  let fallback = false;
+  if (!r.rows.length && period !== 'all' && c.req.query('fallback') !== '0') {
+    r = await lb.top({ board, period: 'all', limit });
+    fallback = true;
+  }
+  return c.json({ ...r, fallback, how_to_earn: karma.howToEarn(), per_credit: karma.perCredit() }, 200, { 'cache-control': 'public, max-age=30' });
 });
 
 /** Public: every publisher with a live app. filter: all | claimed | imported | verified. */
@@ -696,16 +792,17 @@ api.post('/apps/:slug/refresh', async (c) => {
 });
 
 api.post('/apps/:slug/verify', async (c) => {
-  const { row } = await appFor(c, c.req.param('slug'));
+  const { user, row } = await appFor(c, c.req.param('slug'));
   if (row.verified) return c.json({ verified: true, method: 'already' });
   const method = await verifyOrigin({ origin: row.origin, url: row.url, token: row.verify_token });
   if (!method) return c.json({ verified: false, error: 'the token was not found yet', verify: verifyHelp(row) }, 409);
   await db()`update apps set verified_at = now(), verified_by = ${method} where id = ${row.id}`;
-  return c.json({ verified: true, method });
+  const paid = await karma.award({ userId: user.id, action: 'verify', ref: row.id, appId: row.id });
+  return c.json({ verified: true, method, karma: paid });
 });
 
 api.post('/apps/:slug/:action{publish|unlist|unpublish}', async (c) => {
-  const { row } = await appFor(c, c.req.param('slug'));
+  const { user, row } = await appFor(c, c.req.param('slug'));
   const action = c.req.param('action');
   if (action === 'publish') {
     if (!row.verified) fail(409, 'verify that you own the origin first', { verify: verifyHelp(row) });
@@ -716,7 +813,9 @@ api.post('/apps/:slug/:action{publish|unlist|unpublish}', async (c) => {
   await db()`update apps set status = ${status}::app_status, updated_at = now(),
              published_at = case when ${status} = 'published' then coalesce(published_at, now()) else published_at end
              where id = ${row.id}`;
-  return c.json({ ok: true, status });
+  // +10 the first time a listing goes live (the ledger pays once per app; staff earn nothing).
+  const paid = status === 'published' && !row.published_at ? await karma.award({ userId: user.id, action: 'publish', ref: row.id, appId: row.id }) : null;
+  return c.json({ ok: true, status, ...(paid && { karma: paid }) });
 });
 
 api.delete('/apps/:slug', async (c) => {
@@ -969,6 +1068,13 @@ api.get('/apps/:slug/featured', async (c) => {
 api.post('/apps/:slug/feature', async (c) => {
   const { user, row } = await appFor(c, c.req.param('slug'));
   if (row.status !== 'published') return c.json({ error: 'publish the app first; only a live listing can be featured' }, 409);
+  const b = await body(c);
+  if (b.credit === true || b.credit === 'true') {
+    // A free Featured week earned with karma: the same grant, no CoinPay.
+    const r = await karma.spendCredit({ user, app: row });
+    if (r.error) return c.json({ error: r.error, karma: await karma.karmaOf(user.id), per_credit: karma.perCredit() }, r.status);
+    return c.json({ ...r, paid_with: 'credit', days: newsletter.FEATURED.days });
+  }
   if (!paymentsEnabled()) return c.json({ error: 'payments are not switched on yet' }, 503);
   const { checkoutUrl } = await createCheckout({
     user,

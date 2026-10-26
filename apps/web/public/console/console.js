@@ -68,6 +68,7 @@ function nav() {
         link('/console/publishers', 'Publishers', `<small>${me.usage.publishers}</small>`),
         link('/console/orgs', 'Orgs & teams'),
         '<div class="sep"></div>',
+        link('/console/karma', 'Karma', `<small>${me.karma?.total ?? 0}</small>`),
         link('/console/billing', 'Plan & billing', `<small>${esc(me.plan.name)}</small>`),
         link('/console/keys', 'API keys & passkeys'),
       ].join('')
@@ -109,6 +110,7 @@ async function route() {
     if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/billing') return billing();
     if (p === '/console/feature') return featurePick();
+    if (p === '/console/karma') return karmaPage();
     if (p === '/console/keys') return keys();
     if (p.startsWith('/console/claim/')) return claimView(decodeURIComponent(p.split('/')[3]));
     view.innerHTML = '<p>Not found. <a href="/console">Back to the console</a></p>';
@@ -193,6 +195,7 @@ async function overview() {
       <div class="kpi"><span>Plan</span><b>${esc(pl.name)}</b>${pl.paid_through ? `<small class="muted">through ${esc(pl.paid_through.slice(0, 10))}</small>` : '<a href="/console/billing" style="font-size:13px">Upgrade →</a>'}</div>
       <div class="kpi"><span>Publishers</span><b>${me.usage.publishers}${pl.publishers !== null ? ` / ${pl.publishers}` : ''}</b>${meter(me.usage.publishers, pl.publishers)}</div>
       <div class="kpi"><span>Apps</span><b>${me.usage.apps}${pl.apps !== null ? ` / ${pl.apps}` : ''}</b>${meter(me.usage.apps, pl.apps)}</div>
+      <div class="kpi"><span>Karma</span><b>${me.karma?.total ?? 0}</b><a href="/console/karma" style="font-size:13px">${me.karma?.credits_available ? `${me.karma.credits_available} free Featured week${me.karma.credits_available === 1 ? '' : 's'} →` : 'How to earn →'}</a></div>
       <div class="kpi"><span>Installs</span><b>${apps.reduce((n, a) => n + a.installs, 0)}</b><small class="muted">across your apps</small></div>
     </div>
     ${
@@ -865,7 +868,18 @@ async function featuredPanel(slug) {
   box.innerHTML = `<div class="row" style="justify-content:space-between"><h3>Get featured · ${esc(price)}</h3><a class="btn sm" href="/featured" target="_blank">How it works ↗</a></div>
     <p class="muted">${esc(st.days)} days on the home page's Featured row and at the top of the store, plus a slot in the next pwamart newsletter. One payment through CoinPay, in any major coin or PayPal${st.featured && st.featured_until ? '; buying again adds the time on' : ''}.</p>
     ${now}
-    <div class="row"><button class="btn primary" id="buy-feature" ${st.payments_enabled ? '' : 'disabled'}>${st.featured ? 'Add 7 more days' : `Feature it for ${esc(price)}`}</button><span id="fmsg"></span></div>`;
+    <div class="row"><button class="btn primary" id="buy-feature" ${st.payments_enabled ? '' : 'disabled'}>${st.featured ? 'Add 7 more days' : `Feature it for ${esc(price)}`}</button>${me.karma?.credits_available ? `<button class="btn dark" id="credit-feature">Use a free week (${me.karma.credits_available} earned with karma)</button>` : ''}<span id="fmsg"></span></div>`;
+  $('#credit-feature')?.addEventListener('click', async () => {
+    $('#credit-feature').disabled = true;
+    try {
+      await api(`/apps/${encodeURIComponent(slug)}/feature`, { method: 'POST', body: { credit: true } });
+      await refreshMe();
+      return featuredPanel(slug);
+    } catch (err) {
+      $('#fmsg').innerHTML = errBox(err);
+      $('#credit-feature').disabled = false;
+    }
+  });
   $('#buy-feature').addEventListener('click', async () => {
     $('#buy-feature').disabled = true;
     $('#fmsg').innerHTML = '<span class="muted">Opening CoinPay…</span>';
@@ -908,4 +922,59 @@ async function featurePick() {
             .join('')}</div>`
         : '<p>No live apps yet. <a href="/console/submit">List one</a>, publish it, then come back.</p>'
     }`;
+}
+
+/* ----------------------------------------------------------------- karma -- */
+
+/** /console/karma: total, rank, credits to spend, progress to the next, history, how to earn. */
+async function karmaPage() {
+  const [k, mine] = await Promise.all([api('/karma?limit=50'), api('/me/apps')]);
+  const live = mine.apps.filter((a) => a.status === 'published');
+  const n = k.next_credit;
+  const pct = Math.round(n.progress * 100);
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">${k.rank.week ? `#${k.rank.week} this week` : 'Not on this week\'s board yet'}${k.rank.all ? ` · #${k.rank.all} all time` : ''}</div><h1>Karma</h1></div>
+      <a class="btn" href="/leaderboard">Leaderboard</a></div>
+    ${k.staff ? '<p class="muted">Staff accounts earn no karma and are not ranked.</p>' : ''}
+    <div class="kpis">
+      <div class="kpi"><span>Karma</span><b>${k.total}</b><small class="muted">${k.week} this week</small></div>
+      <div class="kpi"><span>Next free Featured week</span><b>${n.remaining}</b><small class="muted">karma to go (at ${n.at})</small>${meter(n.per - n.remaining, n.per)}</div>
+      <div class="kpi"><span>Free weeks</span><b>${k.credits.available}</b><small class="muted">${k.credits.spent} spent · ${k.credits.granted} earned</small></div>
+      <div class="kpi"><span>Badges</span><b>${k.badges.map((b) => esc(b.emoji)).join(' ') || '–'}</b><small class="muted">${k.badges.map((b) => esc(b.label)).join(', ') || 'first one at 10 karma'}</small></div>
+    </div>
+    <p class="muted">${pct}% of the way to your next free Featured week: ${n.remaining} more karma.</p>
+    ${
+      k.credits.available
+        ? `<div class="panel" style="margin:18px 0"><h3>Spend a free Featured week</h3>${
+            live.length
+              ? `<div class="row"><select id="credit-app">${live.map((a) => `<option value="${esc(a.slug)}">${esc(a.name)}</option>`).join('')}</select><button class="btn primary" id="spend">Feature it for 7 days</button><span id="smsg"></span></div>`
+              : '<p class="muted">Publish an app first; a credit features one of your live apps.</p>'
+          }</div>`
+        : ''
+    }
+    <h2 style="margin:22px 0 10px">History</h2>
+    ${
+      k.events.length
+        ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>What</th><th>App</th><th>Karma</th></tr></thead><tbody>${k.events
+            .map((e) => `<tr><td>${esc(String(e.at).slice(0, 10))}</td><td>${esc(e.label)}${e.reversal ? ' (taken back)' : ''}</td><td>${e.app ? `<a href="/apps/${esc(e.app.slug)}">${esc(e.app.name)}</a>` : '–'}</td><td><b>${e.points > 0 ? '+' : ''}${e.points}</b></td></tr>`)
+            .join('')}</tbody></table></div>`
+        : '<div class="empty">No karma yet. <a href="/apps?sort=votes">Upvote an app</a> or <a href="/apps">review one</a> to start.</div>'
+    }
+    <h2 style="margin:22px 0 10px">How to earn</h2>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Do this</th><th>Karma</th><th>Rule</th></tr></thead><tbody>${k.how_to_earn
+      .map((r) => `<tr><td>${esc(r.label)}</td><td><b>+${r.points}</b></td><td class="muted">${esc(r.rule)}</td></tr>`)
+      .join('')}</tbody></table></div>
+    <p class="muted">Every ${n.per} karma is a free Featured week. Your own apps and installs earn nothing.</p>`;
+  $('#spend')?.addEventListener('click', async () => {
+    const slug = $('#credit-app').value;
+    $('#spend').disabled = true;
+    try {
+      const r = await api(`/apps/${encodeURIComponent(slug)}/feature`, { method: 'POST', body: { credit: true } });
+      await refreshMe();
+      $('#smsg').innerHTML = `<span class="ok-msg">Featured until ${esc(String(r.ends_at).slice(0, 10))}.</span>`;
+      setTimeout(karmaPage, 1200);
+    } catch (err) {
+      $('#smsg').innerHTML = errBox(err);
+      $('#spend').disabled = false;
+    }
+  });
 }

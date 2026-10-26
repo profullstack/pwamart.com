@@ -19,7 +19,7 @@ export const TOOLS = [
       properties: {
         query: { type: 'string', description: 'free text, e.g. "markdown notes"' },
         category: { type: 'string', description: 'category slug from list_categories' },
-        sort: { type: 'string', enum: ['top', 'new', 'rating', 'name'] },
+        sort: { type: 'string', enum: ['top', 'votes', 'new', 'rating', 'name'], description: 'votes = most upvoted' },
         feature: { type: 'string', enum: ['offline'], description: 'only apps with this detected feature; offline = its service worker answers from a cache' },
         offline: { type: 'boolean', description: 'shorthand for feature: "offline"' },
         surface: { type: 'string', enum: ['cli', 'api', 'mcp', 'desktop'], description: 'only apps that are also a CLI (curl | sh installer), an HTTP API, an MCP server or a native desktop app' },
@@ -106,8 +106,13 @@ export const TOOLS = [
   {
     name: 'feature_app',
     description:
-      'Get a published app featured for $19: 7 days on the pwamart home page and a slot in the next newsletter. Returns a CoinPay crypto checkout URL for a human to pay. Needs an API key.',
-    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
+      'Get a published app featured for $19: 7 days on the pwamart home page and a slot in the next newsletter. Returns a CoinPay crypto checkout URL for a human to pay; with credit: true it spends a free Featured week earned with karma instead (no payment). Needs an API key.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, credit: { type: 'boolean', description: 'spend a karma credit (every 500 karma earns one)' } },
+      required: ['slug'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'get_badge',
@@ -138,6 +143,50 @@ export const TOOLS = [
       required: ['slug'],
       additionalProperties: false,
     },
+  },
+  {
+    name: 'my_karma',
+    description: 'Your pwamart karma: total, this week, rank, badges, free Featured week credits, karma to the next one, recent history and how to earn more. Needs an API key or `pwamart login`.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'history rows' } }, additionalProperties: false },
+  },
+  {
+    name: 'leaderboard',
+    description: 'The public karma leaderboard: members ranked by karma earned upvoting, reviewing, commenting on, sharing and publishing apps. Falls back to all time when the period is empty.',
+    inputSchema: {
+      type: 'object',
+      properties: { period: { type: 'string', enum: ['week', 'month', 'all'] }, limit: { type: 'integer', minimum: 1, maximum: 100 } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'upvote_app',
+    description: 'Upvote an app (one per member per app; earns +1 karma, +1 to its owner, not on your own apps). remove: true takes the vote back. Needs an API key.',
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' }, remove: { type: 'boolean' } }, required: ['slug'], additionalProperties: false },
+  },
+  {
+    name: 'review_app',
+    description: 'Rate an app 1 to 5 with an optional review (30+ characters earns 5 karma, once per app, not your own). Posting again updates your review. Needs an API key.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, rating: { type: 'integer', minimum: 1, maximum: 5 }, text: { type: 'string' } },
+      required: ['slug', 'rating'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'comment',
+    description: "Comment on an app's page, or reply to a comment (parent = its id; one level). 10+ characters earns 2 karma (up to 10 a day). Rate limited. Needs an API key.",
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, text: { type: 'string' }, parent: { type: 'string', description: 'comment id to reply to' } },
+      required: ['slug', 'text'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_comments',
+    description: "An app's comments with their replies, each author's name and karma.",
+    inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'subscribe_newsletter',
@@ -216,7 +265,7 @@ export async function callTool(name, args, call, siteUrl) {
     case 'publish_app':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/publish`, json('POST')));
     case 'feature_app':
-      return text(await call(`/apps/${encodeURIComponent(args.slug)}/feature`, json('POST')));
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/feature`, json('POST', args.credit ? { credit: true } : {})));
     case 'get_badge': {
       if (args.site) return text(await call(`/badge?${q({ site: args.site })}`));
       if (!args.slug) throw new Error('pass slug or site');
@@ -224,6 +273,20 @@ export async function callTool(name, args, call, siteUrl) {
     }
     case 'check_badge':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/badge/check`, json('POST')));
+    case 'my_karma':
+      return text(await call(`/karma?${q({ limit: args.limit ?? 20 })}`));
+    case 'leaderboard': {
+      const r = await call(`/leaderboard?${q({ board: 'karma', period: args.period, limit: args.limit ?? 10 })}`);
+      return text({ period: r.period, fallback: r.fallback, rows: r.rows.map((x) => ({ rank: x.rank, name: x.name, karma: x.value, badges: x.badges.map((b) => b.label), card: `${siteUrl}${x.url}` })), how_to_earn: r.how_to_earn, page: `${siteUrl}/leaderboard` });
+    }
+    case 'upvote_app':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/vote`, args.remove ? { method: 'DELETE' } : json('POST')));
+    case 'review_app':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/reviews`, json('POST', { rating: args.rating, body: args.text })));
+    case 'comment':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/comments`, json('POST', { body: args.text, parent: args.parent })));
+    case 'list_comments':
+      return text(await call(`/apps/${encodeURIComponent(args.slug)}/comments`));
     case 'get_releases':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/releases`));
     case 'follow':

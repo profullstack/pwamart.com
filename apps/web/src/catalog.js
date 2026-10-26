@@ -10,7 +10,7 @@ import { mergeSurfaces, w3bsPage } from './surfaces.js';
 const PUBLIC_FIELDS = (sql) => sql`
   a.id, a.slug, a.name, a.summary, a.description, a.url, a.origin, a.start_url, a.manifest_id,
   a.manifest_url, a.icon_url, a.screenshots, a.theme_color, a.background_color, a.display,
-  a.category, a.tags, a.features, a.offline_reason, a.surfaces, a.surfaces_set, a.surface_keys, a.status, a.featured, a.installs, a.rating_count,
+  a.category, a.tags, a.features, a.offline_reason, a.surfaces, a.surfaces_set, a.surface_keys, a.status, a.featured, a.installs, a.votes, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
   a.verified_at is not null as verified, a.badge_verified_at, a.check_report, a.checked_at, a.published_at, a.updated_at,
   p.slug as publisher_slug, p.name as publisher_name, p.avatar_url as publisher_avatar, p.verified as publisher_verified, p.claimable as publisher_claimable, p.claim_domain as publisher_claim_domain`;
@@ -43,6 +43,7 @@ export function shape(row) {
     status: row.status,
     featured: row.featured,
     installs: row.installs,
+    votes: row.votes ?? 0,
     rating: row.rating === null || row.rating === undefined ? null : Number(row.rating),
     rating_count: row.rating_count,
     verified: row.verified,
@@ -86,6 +87,7 @@ export async function surfaceCounts() {
 const SORTS = {
   top: (sql) => sql`a.featured desc, a.installs desc, a.published_at desc`,
   new: (sql) => sql`a.published_at desc nulls last`,
+  votes: (sql) => sql`a.votes desc, a.installs desc, a.published_at desc`,
   rating: (sql) => sql`(a.rating_sum::numeric / greatest(a.rating_count, 1)) desc, a.rating_count desc`,
   name: (sql) => sql`lower(a.name)`,
 };
@@ -161,7 +163,8 @@ export async function categoryCounts() {
 
 export async function reviewsFor(appId, limit = 20) {
   return db()`
-    select r.rating, r.body, r.created_at, split_part(u.email, '@', 1) as author
+    select r.rating, r.body, r.created_at, coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as author,
+           (select coalesce(sum(k.points), 0) from karma_events k where k.user_id = r.user_id)::int as karma
     from reviews r join users u on u.id = r.user_id
     where r.app_id = ${appId} and r.body is not null
     order by r.updated_at desc limit ${limit}`;

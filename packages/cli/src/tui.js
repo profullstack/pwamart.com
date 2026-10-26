@@ -3,16 +3,17 @@
  *
  * Left: search + results. Right: the selected app. One click (or Enter) on a row
  * shows it; `i` installs it as an app window, `o` opens it in the browser.
- * `/` searches, `c` cycles categories, `s` cycles sort, q quits.
+ * `/` searches, `c` cycles categories, `s` cycles sort, `u` upvotes the app,
+ * `l` shows the karma leaderboard, q quits.
  */
 import { createApp } from '@profullstack/hqtui';
-import { categories, countInstall, getApp, search } from './client.js';
+import { categories, countInstall, getApp, leaderboard, search, vote } from './client.js';
 import { installApp } from './install.js';
 
-const SORTS = ['top', 'new', 'rating', 'name'];
+const SORTS = ['top', 'votes', 'new', 'rating', 'name'];
 
 export function initialState({ q } = {}) {
-  return { q: q ?? '', editing: false, cats: [], cat: -1, sort: 0, list: null, selected: 0, detail: null, status: 'Loading…', busy: false };
+  return { q: q ?? '', editing: false, cats: [], cat: -1, sort: 0, list: null, selected: 0, detail: null, board: null, status: 'Loading…', busy: false };
 }
 
 const stars = (r) => (r ? `★ ${Number(r).toFixed(1)}` : 'new');
@@ -43,7 +44,18 @@ export function view(state) {
               });
           });
         });
-        row.panel({ title: state.detail?.app?.name ?? 'Details', size: '1fr' }, (p) => {
+        row.panel({ title: state.board ? 'Top karma' : state.detail?.app?.name ?? 'Details', size: '1fr' }, (p) => {
+          if (state.board) {
+            const b = state.board;
+            p.text(b.fallback ? 'All time (nobody yet this week)' : 'This week', { fg: theme.muted });
+            p.text('');
+            if (!b.rows.length) p.text('Nobody yet: upvote, review or comment to be first.', { fg: theme.muted });
+            for (const r of b.rows) p.text(`${String(r.rank).padStart(3)}  ${r.name.slice(0, 24).padEnd(24)} ${String(r.display).padStart(6)} ${r.badges.map((x) => x.emoji).join('')}`);
+            p.text('');
+            p.text('Upvote (+1), review (+5), comment (+2), share (+1), publish (+10). 500 = a free Featured week.', { fg: theme.muted, wrap: true });
+            p.text('Press l to go back.', { fg: theme.muted });
+            return;
+          }
           const d = state.detail;
           if (!d) {
             p.text(apps.length ? 'Pick an app with ↑/↓ or a click.' : '', { fg: theme.muted });
@@ -51,7 +63,7 @@ export function view(state) {
           }
           const a = d.app;
           p.text(`by ${a.publisher.name}${a.publisher.verified ? ' ✓' : ''} · ${a.category_name}`, { fg: theme.muted });
-          p.text(`${stars(a.rating)} (${a.rating_count})   ${a.installs} installs   PWA score ${a.score ?? '–'}%   ${a.verified ? 'verified' : 'unverified'}`);
+          p.text(`▲ ${a.votes ?? 0}   ${stars(a.rating)} (${a.rating_count})   ${a.installs} installs   PWA score ${a.score ?? '–'}%   ${a.verified ? 'verified' : 'unverified'}`);
           p.text('');
           if (a.summary) p.text(a.summary, { fg: theme.accent, wrap: true });
           p.text((a.description ?? '').slice(0, 900), { wrap: true });
@@ -68,6 +80,8 @@ export function view(state) {
           { key: '/', label: 'search' },
           { key: 'i', label: 'install' },
           { key: 'o', label: 'open' },
+          { key: 'u', label: 'upvote' },
+          { key: 'l', label: 'karma' },
           { key: 'c', label: 'category' },
           { key: 's', label: 'sort' },
           { key: 'q', label: 'quit' },
@@ -161,6 +175,22 @@ export async function runTui(auth, opts = {}) {
     } else if (ev.char === 's') {
       state.sort = (state.sort + 1) % SORTS.length;
       void load();
+    } else if (ev.char === 'u' && state.detail) {
+      const a = state.detail.app;
+      vote(auth, a.slug)
+        .then((r) => {
+          a.votes = r.votes;
+          state.status = `▲ upvoted ${a.name}${r.karma?.paid ? ` · +${r.karma.points} karma` : ''}`;
+        })
+        .catch((err) => (state.status = err.status === 401 ? 'Sign in first: pwamart login' : err.message))
+        .finally(redraw);
+    } else if (ev.char === 'l') {
+      if (state.board) state.board = null;
+      else
+        leaderboard(auth, { period: 'week', limit: 20 })
+          .then((b) => (state.board = b))
+          .catch((err) => (state.status = err.message))
+          .finally(redraw);
     } else if (ev.char === 'r') void load();
     redraw();
   });

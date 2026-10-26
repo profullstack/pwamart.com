@@ -188,10 +188,136 @@ review?.addEventListener('submit', async (ev) => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ rating: Number(f.get('rating')), body: f.get('body') }),
   });
-  if (res.status === 401) return location.assign(`/signin?next=${encodeURIComponent(location.pathname)}`);
+  if (res.status === 401) return askSignin(review);
   if (res.ok) return location.reload();
   toast((await res.json().catch(() => ({}))).error ?? 'Could not post that');
 });
+
+/**
+ * Signed out: show the sign-in prompt (CoinPay or an emailed link, both back to this
+ * page) next to what was clicked, instead of losing the reader to another page.
+ */
+function askSignin(near) {
+  const prompt = (near?.closest('section, .install-box, .panel') ?? document).querySelector('[data-signin-prompt]') ?? $('[data-signin-prompt]');
+  if (!prompt) return location.assign(`/signin?next=${encodeURIComponent(location.pathname + location.hash)}`);
+  const next = encodeURIComponent(location.pathname + location.hash);
+  prompt.querySelectorAll('a').forEach((a) => (a.href = a.href.replace(/next=[^&]*/, `next=${next}`)));
+  prompt.hidden = false;
+  prompt.classList.add('flash');
+  prompt.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+const karmaToast = (k) => {
+  if (k?.paid) toast(`+${k.points} karma`);
+};
+
+// Upvote: one per member, toggles; the count follows the server.
+const upvoteBtn = $('#upvote');
+if (upvoteBtn) {
+  const slug = upvoteBtn.dataset.slug;
+  const paint = (st) => {
+    upvoteBtn.setAttribute('aria-pressed', String(st.voted));
+    upvoteBtn.classList.toggle('on', st.voted);
+    document.querySelectorAll('[data-votes]').forEach((el) => (el.textContent = st.votes));
+  };
+  fetch(`/api/v1/apps/${encodeURIComponent(slug)}/vote`)
+    .then((r) => r.json())
+    .then((st) => {
+      paint(st);
+      if (st.signed_in) document.querySelectorAll('[data-signin-prompt]').forEach((p) => (p.hidden = true));
+    })
+    .catch(() => {});
+  upvoteBtn.addEventListener('click', async () => {
+    const on = upvoteBtn.getAttribute('aria-pressed') === 'true';
+    const res = await fetch(`/api/v1/apps/${encodeURIComponent(slug)}/vote`, { method: on ? 'DELETE' : 'POST' });
+    if (res.status === 401) return askSignin(upvoteBtn);
+    const st = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(st.error ?? 'Could not vote');
+    paint(st);
+    karmaToast(st.karma);
+  });
+}
+
+// Comments: post, reply (one level), delete your own.
+const comments = $('#comments');
+if (comments) {
+  const slug = comments.dataset.slug;
+  const form = $('#comment-form');
+  const parent = form.querySelector('[name=parent]');
+  const replying = form.querySelector('.replying');
+  const reply = (id) => {
+    parent.value = id;
+    replying.hidden = false;
+    form.querySelector('textarea').focus();
+  };
+  form.querySelector('[data-cancel-reply]').addEventListener('click', (ev) => {
+    ev.preventDefault();
+    parent.value = '';
+    replying.hidden = true;
+  });
+  fetch(`/api/v1/apps/${encodeURIComponent(slug)}/comments`)
+    .then((r) => r.json())
+    .then(({ comments: list, signed_in }) => {
+      if (signed_in) document.querySelectorAll('[data-signin-prompt]').forEach((p) => (p.hidden = true));
+      const all = (list ?? []).flatMap((c) => [c, ...(c.replies ?? [])]);
+      for (const c of all) {
+        const acts = comments.querySelector(`[data-comment-id="${CSS.escape(c.id)}"] [data-comment-acts]`);
+        if (!acts) continue;
+        if (!c.parent_id) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'linkish';
+          b.textContent = 'Reply';
+          b.addEventListener('click', () => (signed_in ? reply(c.id) : askSignin(comments)));
+          acts.append(b);
+        }
+        if (c.can_delete) {
+          const d = document.createElement('button');
+          d.type = 'button';
+          d.className = 'linkish';
+          d.textContent = c.mine ? 'Delete' : 'Delete (staff)';
+          d.addEventListener('click', async () => {
+            if (!confirm('Delete this comment? Its karma goes back.')) return;
+            const r = await fetch(`/api/v1/comments/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+            if (r.ok) location.reload();
+            else toast((await r.json().catch(() => ({}))).error ?? 'Could not delete it');
+          });
+          acts.append(d);
+        }
+      }
+    })
+    .catch(() => {});
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(form);
+    const res = await fetch(`/api/v1/apps/${encodeURIComponent(slug)}/comments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body: f.get('body'), parent: f.get('parent') || undefined }),
+    });
+    if (res.status === 401) return askSignin(form);
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(r.error ?? 'Could not post that');
+    karmaToast(r.comment?.karma);
+    setTimeout(() => location.reload(), r.comment?.karma?.paid ? 700 : 0);
+  });
+}
+
+// Share clicks are tracked (signed in, they earn karma); the link still opens as normal.
+const trackShare = (network) => {
+  const slug = $('#upvote')?.dataset.slug ?? $('#comments')?.dataset.slug;
+  if (!slug) return;
+  fetch(`/api/v1/apps/${encodeURIComponent(slug)}/share`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ network }),
+  })
+    .then((r) => r.json())
+    .then((r) => karmaToast(r.karma))
+    .catch(() => {});
+};
+document.querySelectorAll('#share [data-net]').forEach((a) => a.addEventListener('click', () => trackShare(a.dataset.net)));
+document.querySelector('#share [data-copy-post]')?.addEventListener('click', () => trackShare('copy'));
 
 // Install pwamart itself.
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -404,4 +530,13 @@ if (col) {
     }
   };
   for (const b of boxes) b.addEventListener('change', update);
+}
+
+// Elsewhere (home, leaderboard): hide the sign-in prompts for a signed-in reader.
+if (!$('#upvote') && !$('#comments') && document.querySelector('[data-signin-prompt]')) {
+  fetch('/api/v1/karma?limit=1')
+    .then((r) => {
+      if (r.ok) document.querySelectorAll('[data-signin-prompt]').forEach((p) => (p.hidden = true));
+    })
+    .catch(() => {});
 }
