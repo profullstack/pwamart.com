@@ -1,6 +1,6 @@
 # One image: the Bun web app, its API and the hosted MCP endpoint. dev2 builds this
 # on every merge to master. The desktop app is not part of it.
-FROM oven/bun:1.4.2-slim
+FROM oven/bun:1.4.4-slim
 WORKDIR /app
 COPY package.json bun.lock* ./
 COPY apps/web/package.json apps/web/
