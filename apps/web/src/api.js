@@ -21,6 +21,7 @@ import * as karma from './karma.js';
 import { CommentError, addComment, commentsFor, deleteComment, payReview, share as shareApp, unvote, upvote, votedSlugs, voteState } from './community.js';
 import { mountProfileRoutes, validateProfile } from '@profullstack/profile';
 import { profiles } from './user-profile.js';
+import * as credits from './credits.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -182,9 +183,13 @@ api.post('/auth/link', async (c) => {
     if (!check.ok) return c.json({ error: 'some fields need fixing', errors: check.errors }, 400);
     profile = check.profile;
   }
+  // An invite (/i/<code>) or ?ref= this browser picked up rides the link, so the
+  // email can be opened anywhere. Only a brand-new account ever uses them.
+  const invite = credits.canonicalInvite(fields.invite ?? getCookie(c, credits.INVITE_COOKIE));
+  const ref = credits.cleanRef(fields.ref ?? getCookie(c, credits.REF_COOKIE));
   // Same answer whether or not the address has an account.
   try {
-    await sendLoginLink({ email: e, url: await auth.createLoginLink(e, { profile }) });
+    await sendLoginLink({ email: e, url: await auth.createLoginLink(e, { profile, invite, ref }) });
   } catch (err) {
     console.error(`[auth] could not send link: ${err?.message ?? err}`);
   }
@@ -1129,6 +1134,45 @@ api.post('/newsletter/subscribe', async (c) => {
   return c.json({ ok: true, message: 'check your inbox for the confirmation link' });
 });
 
+/* ------------------------------------------------- credit codes + invites -- */
+
+/** Pro days this account got from codes and invites (a code's days land on the plan, see billing). */
+api.get('/credits', async (c) => {
+  const user = await requireUser(c);
+  return c.json(await credits.creditSummary(user.id));
+});
+
+/** Redeem a credit code (PM-XXXX-XXXX-XXXX-XXXX) for Pro days. */
+api.post('/credits/redeem', async (c) => {
+  const user = await requireUser(c);
+  const code = credits.cleanCode((await body(c)).code);
+  if (!code) return c.json({ error: 'enter a code', reason: 'invalid' }, 400);
+  const r = await credits.redeemCode(user, code);
+  if (!r.ok) return c.json({ error: r.message, reason: r.reason }, r.reason === 'invalid' ? 404 : 409);
+  return c.json({ ...r, billing: await billingState(user.id) });
+});
+
+/** Your invites: quota, each invite's state, your open ?ref= link. */
+api.get('/invites', async (c) => {
+  const user = await requireUser(c);
+  return c.json(await credits.inviteSummary(user.id, credits.originFor(c)));
+});
+
+/** Make an invite. The code is in this answer and nowhere else (only its hash is kept). */
+api.post('/invites', async (c) => {
+  const user = await requireUser(c);
+  const r = await credits.createInvite(user.id, (await body(c)).note, credits.originFor(c));
+  if (!r.ok) return c.json({ error: 'no invites left', reason: r.reason }, 409);
+  return c.json(r, 201);
+});
+
+api.delete('/invites/:id', async (c) => {
+  const user = await requireUser(c);
+  const r = await credits.revokeInvite(user.id, c.req.param('id'));
+  if (!r.ok) return c.json({ error: r.error }, r.status);
+  return c.json(r);
+});
+
 /* --------------------------------------------------------------- billing -- */
 
 api.get('/billing', async (c) => {
@@ -1249,6 +1293,42 @@ api.post('/admin/apps/:slug', async (c) => {
   if (b.status && ['draft', 'published', 'unlisted', 'removed'].includes(b.status))
     await db()`update apps set status = ${b.status}::app_status, published_at = case when ${b.status} = 'published' then coalesce(published_at, now()) else published_at end where id = ${row.id}`;
   return c.json({ app: shape(await getApp(row.slug, { includeDrafts: true })) });
+});
+
+/* ------------------------------------------------- admin credit codes -- */
+
+/** Mint a code: { days, label?, max_redemptions?, expires_in_days? }. The code is shown once. */
+api.post('/admin/credit-codes', async (c) => {
+  const user = await requireAdmin(c);
+  const b = await body(c);
+  try {
+    const m = await credits.mintCode({ days: b.days, label: b.label, maxRedemptions: b.max_redemptions ?? 1, expiresInDays: b.expires_in_days ?? null, createdBy: user.email });
+    return c.json({ code: m.code, id: m.id, label: m.label, days: m.grant.amount, max_redemptions: m.maxRedemptions, expires_at: m.expiresAt ? new Date(m.expiresAt).toISOString() : null }, 201);
+  } catch (err) {
+    if (err instanceof RangeError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
+});
+api.get('/admin/credit-codes', async (c) => {
+  await requireAdmin(c);
+  return c.json({ codes: await credits.creditServices().credits.list() });
+});
+api.delete('/admin/credit-codes/:id', async (c) => {
+  await requireAdmin(c);
+  try {
+    await credits.creditServices().credits.revoke(c.req.param('id'));
+  } catch {
+    fail(404, 'no such code');
+  }
+  return c.json({ ok: true });
+});
+/** Hand someone more invites: { total }. */
+api.post('/admin/invite-quota/:userId', async (c) => {
+  await requireAdmin(c);
+  const total = Number((await body(c)).total);
+  if (!Number.isInteger(total) || total < 0 || total > 1000) return c.json({ error: 'total is 0 to 1000' }, 400);
+  await credits.creditServices().affiliates.setQuota(c.req.param('userId'), total);
+  return c.json({ ok: true, quota: await credits.creditServices().affiliates.quota(c.req.param('userId')) });
 });
 
 /* ------------------------------------------------------ admin newsletter -- */

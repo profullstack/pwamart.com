@@ -37,12 +37,14 @@ export const expectedOrigins = () => {
  * the token because the account row does not exist until the link is spent.
  * Bound as text and cast, so the driver never JSON-encodes the string a second time.
  */
-export async function createLoginLink(email, { profile = null } = {}) {
+export async function createLoginLink(email, { profile = null, invite = null, ref = null } = {}) {
   const token = randomBytes(32).toString('base64url');
+  // An invite or ?ref= this browser carried rides the link too (credits.js), so
+  // opening the email on another device still counts it.
   await db()`
-    insert into login_tokens (token_hash, email, expires_at, profile)
+    insert into login_tokens (token_hash, email, expires_at, profile, invite_code, ref_code)
     values (${sha(token)}, ${email.trim().toLowerCase()}, ${new Date(Date.now() + TOKEN_TTL_MINUTES * 60_000)},
-            ${profile ? JSON.stringify(profile) : null}::text::jsonb)`;
+            ${profile ? JSON.stringify(profile) : null}::text::jsonb, ${invite}, ${ref})`;
   return `${config.siteUrl}/auth/magic?t=${token}`;
 }
 
@@ -51,11 +53,18 @@ export async function consumeLoginLink(token, { userAgent } = {}) {
   const [row] = await db()`
     update login_tokens set used_at = now()
     where token_hash = ${sha(token)} and used_at is null and expires_at > now()
-    returning email`;
+    returning email, invite_code, ref_code`;
   if (!row) return null;
   const profile = await takeSignupProfile(sha(token));
-  const user = await findOrCreateUser(row.email);
-  return { user, sessionId: await startSession(user.id, userAgent), profile };
+  const { created, ...user } = await findOrCreateUser(row.email);
+  return {
+    user,
+    created,
+    invite: row.invite_code,
+    ref: row.ref_code,
+    sessionId: await startSession(user.id, userAgent),
+    profile,
+  };
 }
 
 /**
@@ -82,7 +91,7 @@ export async function findOrCreateUser(email) {
   const [user] = await sql`
     insert into users (email) values (${e})
     on conflict (lower(email)) do update set email = users.email
-    returning *`;
+    returning *, (xmax = 0) as created`;
   await linkPeople(user);
   return user;
 }

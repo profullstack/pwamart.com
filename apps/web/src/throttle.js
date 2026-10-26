@@ -29,13 +29,15 @@ const OPEN = [
   '/install.sh',
   '/upgrade.sh',
   '/uninstall.sh',
+  // Invite links are shared by hand; a crawler 402 there would eat the invite.
+  '/i/',
 ];
 
 let built = null;
 function build() {
   const apiKey = process.env.COINPAY_X402_KEY;
   const gateway = apiKey
-    ? createGateway({ siteUrl: config.siteUrl, coinpay: { apiKey }, payTo: process.env.CRAWL_PAY_TO })
+    ? createGateway({ siteUrl: config.siteUrl, coinpay: { apiKey }, payTo: process.env.CRAWL_PAY_TO, openPaths: ['/i/'] })
     : null;
   const throttle = createThrottle({
     gateway,

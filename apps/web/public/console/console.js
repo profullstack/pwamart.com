@@ -40,7 +40,7 @@ function go(path) {
   route();
 }
 document.addEventListener('click', (ev) => {
-  const a = ev.target.closest('a[href^="/console"], a[href="/signin"], a[href="/signup"]');
+  const a = ev.target.closest('a[href^="/console"], a[href="/signin"], a[href="/signup"], a[href="/invites"]');
   if (!a || ev.metaKey || ev.ctrlKey || a.target) return;
   ev.preventDefault();
   go(a.getAttribute('href'));
@@ -70,6 +70,7 @@ function nav() {
         '<div class="sep"></div>',
         link('/console/karma', 'Karma', `<small>${me.karma?.total ?? 0}</small>`),
         link('/console/billing', 'Plan & billing', `<small>${esc(me.plan.name)}</small>`),
+        link('/invites', 'Invites'),
         link('/console/keys', 'API keys & passkeys'),
       ].join('')
     : '';
@@ -110,6 +111,7 @@ async function route() {
     if (p === '/console/orgs') return orgsPage();
     if (p.startsWith('/console/orgs/')) return orgDetail(decodeURIComponent(p.split('/')[3]));
     if (p === '/console/billing') return billing();
+    if (p === '/invites') return invitesPage();
     if (p === '/console/feature') return featurePick();
     if (p === '/console/karma') return karmaPage();
     if (p === '/console/keys') return keys();
@@ -732,9 +734,34 @@ async function billing() {
     </div>
     <div class="plans">${card('free', '$0')}${card('pro', '$10<small> / year</small>')}${card('unlimited', '$199<small> / year</small>')}</div>
     <p id="bmsg"></p>
-    ${b.payments.length ? `<h2 style="margin:10px 0 12px">Payments</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead><tbody>${b.payments.map((p) => `<tr><td>${esc(day(p.created_at))}</td><td>${esc(name[p.plan] ?? '')}</td><td>${money(p.amount_cents)}</td><td>${p.applied ? 'applied' : ['confirmed', 'paid', 'completed', 'settled', 'succeeded'].includes(p.status) ? 'not applied (underpaid)' : esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+    <div class="panel" id="redeem" style="margin:0 0 18px">
+      <h3 style="margin:0 0 6px">Have a code?</h3>
+      <p class="muted" style="margin:0 0 10px;font-size:13px">A pwamart credit code adds days of Pro, after any time you already have. <a href="/invites">Invite a friend</a> and you both get Pro days too.</p>
+      <form id="redeem-form" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input name="code" required maxlength="48" placeholder="PM-XXXX-XXXX-XXXX-XXXX" aria-label="Credit code" autocomplete="off" spellcheck="false" style="flex:1;min-width:220px;text-transform:uppercase">
+        <button class="btn primary" type="submit">Redeem</button>
+      </form>
+      <p id="redeem-msg" style="margin:8px 0 0"></p>
+    </div>
+    ${b.payments.length ? `<h2 style="margin:10px 0 12px">Payments</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead><tbody>${b.payments.map((p) => `<tr><td>${esc(day(p.created_at))}</td><td>${esc(name[p.plan] ?? '')}${p.product === 'code' ? ' · credit code' : p.product === 'invite' ? ' · invite bonus' : ''}</td><td>${money(p.amount_cents)}</td><td>${p.applied ? 'applied' : ['confirmed', 'paid', 'completed', 'settled', 'succeeded'].includes(p.status) ? 'not applied (underpaid)' : esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
 
   const msg = (h) => ($('#bmsg').innerHTML = h);
+  $('#redeem-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const out = $('#redeem-msg');
+    const btn = ev.target.querySelector('button');
+    btn.disabled = true;
+    try {
+      const r = await api('/credits/redeem', { method: 'POST', body: { code: ev.target.code.value } });
+      ev.target.reset();
+      await refreshMe();
+      await billing();
+      $('#redeem-msg').innerHTML = `<span class="ok-msg">Redeemed: ${r.days} days of Pro, through ${esc(day(r.ends_at))}.</span>`;
+    } catch (err) {
+      out.innerHTML = errBox(err);
+      btn.disabled = false;
+    }
+  });
   view.querySelectorAll('[data-buy]').forEach((btn) =>
     btn.addEventListener('click', async () => {
       try {
@@ -782,6 +809,50 @@ async function billing() {
     };
     setTimeout(poll, 15_000);
   }
+}
+
+/* --------------------------------------------------------------- invites -- */
+
+async function invitesPage() {
+  const v = await api('/invites');
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+  const state = (i) => (i.revoked ? 'withdrawn' : i.used ? `accepted ${day(i.used_at)}` : i.expires_at && new Date(i.expires_at) < new Date() ? 'expired' : `open until ${day(i.expires_at)}`);
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Invites</div><h1>Invite someone</h1></div></div>
+    <div class="panel" style="margin-bottom:18px">
+      <p style="margin:0 0 10px">You have <b>${v.quota.left}</b> of ${v.quota.total} invites left. Each works once, for a new account, and expires in 30 days.${v.bonus_days ? ` When the person you invite confirms their account, you each get <b>${v.bonus_days} days of Pro</b>.` : ''}</p>
+      <form id="inv-form" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input name="note" maxlength="120" placeholder="Who is it for? (only you see this)" aria-label="Note" style="flex:1;min-width:220px">
+        <button class="btn primary" type="submit" ${v.quota.left ? '' : 'disabled'}>Make an invite link</button>
+      </form>
+      <div id="inv-new" style="margin-top:10px"></div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">${v.invited} accepted so far${v.bonus_days_earned ? `, ${v.bonus_days_earned} Pro days earned` : ''}.</p>
+    </div>
+    ${v.invites.length ? `<div class="table-wrap" style="margin-bottom:18px"><table class="table"><thead><tr><th>Made</th><th>Note</th><th>State</th><th></th></tr></thead><tbody>${v.invites.map((i) => `<tr><td>${esc(day(i.created_at))}</td><td>${esc(i.note)}</td><td>${esc(state(i))}</td><td>${!i.used && !i.revoked ? `<button class="btn sm" data-revoke="${esc(i.id)}">Withdraw</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div class="panel"><h3 style="margin:0 0 6px">Your open link</h3>
+      <p class="muted" style="margin:0 0 8px;font-size:13px">Not scarce: share it anywhere. New accounts that arrive through it are credited to you.</p>
+      <code style="word-break:break-all">${esc(v.affiliate_url)}</code></div>
+    <p id="inv-msg"></p>`;
+  $('#inv-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await api('/invites', { method: 'POST', body: { note: ev.target.note.value } });
+      await invitesPage();
+      $('#inv-new').innerHTML = `<p class="ok-msg" style="margin:0">Send this link (it is shown once):</p><code style="word-break:break-all;display:block;margin-top:6px">${esc(r.url)}</code>`;
+    } catch (err) {
+      $('#inv-msg').innerHTML = errBox(err);
+    }
+  });
+  view.querySelectorAll('[data-revoke]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      if (!confirm('Withdraw this invite? The link stops working and the invite comes back to you.')) return;
+      try {
+        await api(`/invites/${encodeURIComponent(btn.dataset.revoke)}`, { method: 'DELETE' });
+        invitesPage();
+      } catch (err) {
+        $('#inv-msg').innerHTML = errBox(err);
+      }
+    }),
+  );
 }
 
 /* ---------------------------------------------------------------- claims -- */
