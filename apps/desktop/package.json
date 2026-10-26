@@ -13,18 +13,57 @@
     "dist": "electron-builder --publish never"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
-    "electron-builder": "^26.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "com.pwamart.desktop",
     "productName": "pwamart",
-    "files": ["src/**", "build/icon.png"],
-    "extraResources": [{ "from": "../../packages/cli", "to": "cli", "filter": ["bin/**", "src/**", "package.json"] }],
-    "protocols": [{ "name": "pwamart", "schemes": ["pwamart"] }],
-    "linux": { "target": ["AppImage", "deb"], "category": "Network", "icon": "build/icon.png" },
-    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.utilities", "icon": "build/icon.png" },
-    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "files": [
+      "src/**",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../../packages/cli",
+        "to": "cli",
+        "filter": [
+          "bin/**",
+          "src/**",
+          "package.json"
+        ]
+      }
+    ],
+    "protocols": [
+      {
+        "name": "pwamart",
+        "schemes": [
+          "pwamart"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
     "artifactName": "pwamart-${version}-${os}-${arch}.${ext}"
   }
 }

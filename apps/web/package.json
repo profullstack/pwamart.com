@@ -7,19 +7,19 @@
     "start": "bun src/main.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.131.0",
-    "@profullstack/auth-system": "^0.7.1",
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@profullstack/auth-system": "^0.8.3",
     "@profullstack/leaderboard": "^0.3.1",
     "@profullstack/notifications": "^0.1.4",
-    "@profullstack/profile": "0.1.3",
+    "@profullstack/profile": "0.1.6",
     "@profullstack/pwamart-mcp": "workspace:*",
-    "@profullstack/stack": "^0.4.0",
-    "@profullstack/throttle": "^0.3.3",
-    "@profullstack/x402-gateway": "^0.11.0",
+    "@profullstack/stack": "^0.5.0",
+    "@profullstack/throttle": "^0.3.4",
+    "@profullstack/x402-gateway": "^0.13.1",
     "@pwamart/db": "workspace:*",
     "@pwamart/payments": "workspace:*",
-    "@simplewebauthn/browser": "^13",
-    "@simplewebauthn/server": "^13.2.0",
-    "hono": "^4.10.3"
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
+    "hono": "^4.13.14"
   }
 }
