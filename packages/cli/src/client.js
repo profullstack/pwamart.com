@@ -91,6 +91,10 @@ export const verify = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slu
 export const publish = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/publish`, post());
 export const featured = (auth, slug) => call(auth, `/apps/${encodeURIComponent(slug)}/featured`);
 export const feature = (auth, slug, { credit = false } = {}) => call(auth, `/apps/${encodeURIComponent(slug)}/feature`, post(credit ? { credit: true } : {}));
+export const redeem = (auth, code) => call(auth, '/credits/redeem', post({ code }));
+export const credits = (auth) => call(auth, '/credits');
+export const invites = (auth) => call(auth, '/invites');
+export const createInvite = (auth, note) => call(auth, '/invites', post({ note }));
 export const karma = (auth, { limit } = {}) => call(auth, `/karma?${qs({ limit })}`);
 export const leaderboard = (auth, { period, limit } = {}) => call(auth, `/leaderboard?${qs({ board: 'karma', period, limit })}`);
 export const vote = (auth, slug, { remove = false } = {}) => call(auth, `/apps/${encodeURIComponent(slug)}/vote`, remove ? { method: 'DELETE' } : post());

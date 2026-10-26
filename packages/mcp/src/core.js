@@ -145,6 +145,21 @@ export const TOOLS = [
     },
   },
   {
+    name: 'redeem_credit_code',
+    description: 'Redeem a pwamart credit code (PM-XXXX-XXXX-XXXX-XXXX) for days of the Pro plan, added after any time the account already has. Each code works once per account. Needs an API key or `pwamart login`.',
+    inputSchema: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'], additionalProperties: false },
+  },
+  {
+    name: 'my_invites',
+    description: 'Your pwamart invites: how many are left, each one\'s state, how many were accepted, and your open ?ref= link. Needs an API key.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'create_invite',
+    description: 'Make a single-use pwamart invite link for a new account (3 per account, 30 days). When the invitee confirms their account, both of you get Pro days. The link is returned once. Needs an API key.',
+    inputSchema: { type: 'object', properties: { note: { type: 'string', description: 'who it is for (only you see it)' } }, additionalProperties: false },
+  },
+  {
     name: 'my_karma',
     description: 'Your pwamart karma: total, this week, rank, badges, free Featured week credits, karma to the next one, recent history and how to earn more. Needs an API key or `pwamart login`.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'history rows' } }, additionalProperties: false },
@@ -273,6 +288,12 @@ export async function callTool(name, args, call, siteUrl) {
     }
     case 'check_badge':
       return text(await call(`/apps/${encodeURIComponent(args.slug)}/badge/check`, json('POST')));
+    case 'redeem_credit_code':
+      return text(await call('/credits/redeem', json('POST', { code: args.code })));
+    case 'my_invites':
+      return text(await call('/invites'));
+    case 'create_invite':
+      return text(await call('/invites', json('POST', { note: args.note ?? '' })));
     case 'my_karma':
       return text(await call(`/karma?${q({ limit: args.limit ?? 20 })}`));
     case 'leaderboard': {

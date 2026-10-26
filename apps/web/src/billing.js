@@ -20,8 +20,12 @@ import { PLANS } from './config.js';
 export const RANK = { free: 0, pro: 1, unlimited: 2 };
 const YEAR_MS = 365 * 86400_000;
 
+// `gift`: time from a credit code or an invite (grantDays), which was never paid
+// for and so is never credited against an upgrade.
 const periodsFor = (sql, userId) =>
-  sql`select id, plan, starts_at, ends_at from plan_periods where user_id = ${userId} and ends_at > now() order by starts_at`;
+  sql`select p.id, p.plan, p.starts_at, p.ends_at,
+             exists (select 1 from payments x where x.id = p.payment_id and x.provider = 'grant') as gift
+      from plan_periods p where p.user_id = ${userId} and p.ends_at > now() order by p.starts_at`;
 
 /** The plan in force right now. Staff are unlimited and never billed. */
 export async function currentPlan(userId, sql = db()) {
@@ -51,7 +55,7 @@ export async function billingState(userId, sql = db()) {
   return {
     plan,
     status,
-    periods: periods.map((p) => ({ plan: p.plan, starts_at: p.starts_at, ends_at: p.ends_at, current: new Date(p.starts_at) <= new Date() })),
+    periods: periods.map((p) => ({ plan: p.plan, starts_at: p.starts_at, ends_at: p.ends_at, current: new Date(p.starts_at) <= new Date(), gift: p.gift })),
     coverage_end: coverageEnd,
     renew,
     renew_plan: renewPlan,
@@ -76,7 +80,7 @@ export async function quote(userId, target, sql = db()) {
   if (RANK[target] > RANK[plan.key] && plan.key === 'pro') {
     // Credit every unused Pro day, current and queued, at the Pro price.
     const proMs = periods
-      .filter((p) => p.plan === 'pro')
+      .filter((p) => p.plan === 'pro' && !p.gift)
       .reduce((ms, p) => ms + (new Date(p.ends_at).getTime() - Math.max(now, new Date(p.starts_at).getTime())), 0);
     const credit = Math.min(PLANS[target].priceCents, Math.round((PLANS.pro.priceCents * proMs) / YEAR_MS));
     return {
@@ -114,6 +118,35 @@ export async function applyPurchase(tx, { userId, plan, kind, paymentId }) {
   // Paying for a plan is choosing it: renew as what was just bought.
   await setRenew(tx, userId, plan);
   return p;
+}
+
+/**
+ * Free plan time from a credit code or an invite bonus, on the same path a
+ * purchase takes: a zero-amount `payments` row (provider 'grant'), its
+ * plan_grants row, and one period queued after whatever is already paid for.
+ * Idempotent per user and source: a second call for the same pair adds nothing
+ * and answers { already: true }. The renewal choice is left alone (a gift is
+ * not choosing a plan), and gift days are never credited against an upgrade.
+ */
+export async function grantDays(tx, { userId, days, source, plan = 'pro', product = 'code', label = null }) {
+  if (!PLANS[plan] || plan === 'free') throw new Error('bad plan');
+  const n = Number(days);
+  if (!Number.isInteger(n) || n < 1 || n > 3660) throw new Error('days must be a whole number from 1 to 3660');
+  await tx`select pg_advisory_xact_lock(hashtext(${`billing:${userId}`}))`;
+  const [payment] = await tx`
+    insert into payments (user_id, provider, provider_ref, amount_cents, status, raw)
+    values (${userId}, 'grant', ${`${source}:${userId}`}, 0, 'paid',
+            ${tx.json({ metadata: { user_id: userId, plan, product, days: n, source, label } })})
+    on conflict (provider, provider_ref) do nothing
+    returning id`;
+  if (!payment) return { already: true };
+  await tx`insert into plan_grants (payment_id, user_id, plan) values (${payment.id}, ${userId}, ${plan})`;
+  const [{ last }] = await tx`select greatest(now(), coalesce(max(ends_at), now())) as last from plan_periods where user_id = ${userId}`;
+  const [p] = await tx`
+    insert into plan_periods (user_id, plan, starts_at, ends_at, payment_id)
+    values (${userId}, ${plan}, ${last}, ${last}::timestamptz + make_interval(days => ${n}), ${payment.id})
+    returning plan, starts_at, ends_at`;
+  return { granted: true, days: n, ...p };
 }
 
 export async function setRenew(sql, userId, renew) {

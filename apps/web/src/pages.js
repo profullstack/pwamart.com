@@ -937,6 +937,38 @@ export function notFoundPage({ stats }) {
   });
 }
 
+/* ---------------------------------------------------------------- invite -- */
+
+/** /i/<code>: someone invited you. The code waits in a cookie (and then on the emailed link) until sign-up. */
+export function invitePage({ code, state, signedIn = false, days = 30 }) {
+  const gone = {
+    used: 'That invite has already been used.',
+    expired: 'That invite has expired.',
+    revoked: 'That invite was withdrawn.',
+    invalid: 'That invite code does not exist.',
+  }[state];
+  const bonus = days > 0 ? ` You both get ${e(days)} days of <b>Pro</b> (10 publishers, 100 apps) once your account is confirmed.` : '';
+  const inner =
+    state !== 'ok'
+      ? `<div class="eyebrow">Invite</div><h1 style="margin:10px 0 16px">${e(gone)}</h1>
+         <p class="lede">Ask whoever sent it for a fresh one, or join without one: listing an app is free.</p>
+         <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><a class="btn primary" href="/signup">Create an account</a><a class="btn" href="/apps">Browse apps</a></p>`
+      : signedIn
+        ? `<div class="eyebrow">Invite</div><h1 style="margin:10px 0 16px">You already have a pwamart account.</h1>
+           <p class="lede">Invites are for new accounts, so this one stays unused for someone else. You can send your own from the console.</p>
+           <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><a class="btn primary" href="/invites">Your invites</a><a class="btn" href="/console">Console</a></p>`
+        : `<div class="eyebrow">You're invited</div><h1 style="margin:10px 0 16px">Someone wants you on pwamart.</h1>
+           <p class="lede">pwamart is the app store for web apps: list your PWAs, and install anyone's on any phone, tablet or computer.${bonus}</p>
+           <p style="margin-top:22px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><a class="btn primary" href="/signup">Accept the invite</a><a class="btn" href="/apps">Look around first</a></p>
+           <p class="muted" style="font-size:13px;margin-top:18px">Invite <code>${e(code)}</code> is saved in this browser and on the sign-in email, so you can finish on another device.</p>`;
+  return layout({
+    title: state === 'ok' ? 'You are invited' : 'Invite',
+    path: '/i/',
+    body: `<div class="wrap" style="max-width:760px"><section class="block" style="padding:64px 0;text-align:center">${inner}</section></div>`,
+    noindex: true,
+  });
+}
+
 /* -------------------------------------------------- featured + newsletter -- */
 
 const subscribeForm = (source) => `<form method="post" action="/newsletter" style="max-width:520px;margin:18px 0 0;display:flex;gap:8px;flex-wrap:wrap">

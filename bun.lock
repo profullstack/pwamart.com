@@ -10,11 +10,13 @@
       "version": "0.1.2",
       "dependencies": {
         "@anthropic-ai/sdk": "^1.3.0",
+        "@profullstack/affiliates": "0.3.0",
         "@profullstack/auth-system": "^0.8.3",
         "@profullstack/leaderboard": "^0.3.1",
         "@profullstack/notifications": "^0.1.4",
         "@profullstack/profile": "0.1.6",
         "@profullstack/pwamart-mcp": "workspace:*",
+        "@profullstack/redeem-credits": "0.2.0",
         "@profullstack/stack": "^0.5.0",
         "@profullstack/throttle": "^0.3.4",
         "@profullstack/x402-gateway": "^0.13.1",
@@ -22,12 +24,13 @@
         "@pwamart/payments": "workspace:*",
         "@simplewebauthn/browser": "^14.0.0",
         "@simplewebauthn/server": "^14.0.3",
+        "disposable-email-domains-js": "1.26.0",
         "hono": "^4.13.14",
       },
     },
     "packages/cli": {
       "name": "@profullstack/pwamart",
-      "version": "0.10.1",
+      "version": "0.11.0",
       "bin": {
         "pwamart": "./bin/pwamart.mjs",
       },
@@ -46,7 +49,7 @@
     },
     "packages/mcp": {
       "name": "@profullstack/pwamart-mcp",
-      "version": "0.10.1",
+      "version": "0.11.0",
       "bin": {
         "pwamart-mcp": "./bin/pwamart-mcp.mjs",
       },
@@ -100,6 +103,8 @@
 
     "@peculiar/x509": ["@peculiar/x509@2.2.0", "", { "dependencies": { "@peculiar/asn1-cms": "^2.11.0", "@peculiar/asn1-csr": "^2.11.0", "@peculiar/asn1-ecc": "^2.11.0", "@peculiar/asn1-pkcs9": "^2.11.0", "@peculiar/asn1-rsa": "^2.11.0", "@peculiar/asn1-schema": "^2.11.0", "@peculiar/asn1-x509": "^2.11.0", "@peculiar/asn1-x509-post-quantum": "^2.11.0", "pvtsutils": "^1.3.6", "tslib": "^2.8.1", "tsyringe": "^4.10.0" } }, "sha512-adpW58ySPQMOUPv8pTKT3RIyCFqfUFt8X05ukPdtkQToXDVr8dMtxuenik1yx8tNFTbpApWsM/Hi5SzlIx48+Q=="],
 
+    "@profullstack/affiliates": ["@profullstack/affiliates@0.3.0", "", { "dependencies": { "@profullstack/referrals": "^0.1.0" }, "bin": { "affiliates": "dist/cli.js" } }, "sha512-bp0iREciWetDWrQYOsa6SJRTzviekKwgJQuATT7vql+4equu7pN76q8tb3SP1oBMczydsv6rYUMvPpS6+QT7yQ=="],
+
     "@profullstack/auth-system": ["@profullstack/auth-system@0.8.3", "", { "dependencies": { "bcryptjs": "^2.4.3", "jsonwebtoken": "^9.0.2", "uuid": "^11.1.0" }, "peerDependencies": { "@supabase/supabase-js": "^2.49.4", "mongodb": "^6.5.0", "mysql2": "^3.9.2", "pg": "^8.11.3", "pocketbase": "^0.21.1" }, "optionalPeers": ["@supabase/supabase-js", "mongodb", "mysql2", "pg", "pocketbase"] }, "sha512-goafDEaq8XDDCChfAfi8wvUxn1xMeGWXpr7XEH9czFU/eIq9PkehGRTy3d/YP2BGzO1iIxrTAb2m2eOMTMdYUA=="],
 
     "@profullstack/emailer": ["@profullstack/emailer@1.0.3", "", {}, "sha512-VyAtCcfnSI6LOwJvWogCr3ZNmEsaZw+iuWrqnosLsdcKsbRyCrCmXigMNZJZEjlgYlR+lK//PwNPG+xtCFvWAw=="],
@@ -121,6 +126,8 @@
     "@profullstack/pwamart": ["@profullstack/pwamart@workspace:packages/cli"],
 
     "@profullstack/pwamart-mcp": ["@profullstack/pwamart-mcp@workspace:packages/mcp"],
+
+    "@profullstack/redeem-credits": ["@profullstack/redeem-credits@0.2.0", "", { "bin": { "redeem-credits": "dist/cli.js" } }, "sha512-JLowb7mWYfouIK7O522tuPPhvLjQjhdEfm6g3xEYrlNLGzLhrIADDhrYldBlGHfiVBWUFX7wefLuCSLF9fnyog=="],
 
     "@profullstack/referrals": ["@profullstack/referrals@0.1.0", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"] }, "sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg=="],
 
@@ -147,6 +154,8 @@
     "bcryptjs": ["bcryptjs@2.4.3", "", {}, "sha512-V/Hy/X9Vt7f3BbPJEi8BdVFMByHi+jNXrYkW3huaybV/kQ0KJg0Y6PkEMbn+zeT+i+SiKZ/HMqJGIIt4LZDqNQ=="],
 
     "buffer-equal-constant-time": ["buffer-equal-constant-time@1.0.1", "", {}, "sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA=="],
+
+    "disposable-email-domains-js": ["disposable-email-domains-js@1.26.0", "", {}, "sha512-pSqALZAiuw6HDC1HqhhtvShRnniUNObQ6kzwa5N280XbyxxCPBZnQQ7fO6Uk/CNTi4cAaKE1UZl3Mc30Zfj4UA=="],
 
     "ecdsa-sig-formatter": ["ecdsa-sig-formatter@1.0.11", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ=="],
 
@@ -199,6 +208,8 @@
     "tsyringe": ["tsyringe@4.10.0", "", { "dependencies": { "tslib": "^1.9.3" } }, "sha512-axr3IdNuVIxnaK5XGEUFTu3YmAQ6lllgrvqfEoR16g/HGnYY/6We4oWENtAnzK6/LpJ2ur9PAb80RBt7/U4ugw=="],
 
     "uuid": ["uuid@11.1.1", "", { "bin": { "uuid": "dist/esm/bin/uuid" } }, "sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ=="],
+
+    "@profullstack/pwamart-mcp/@profullstack/pwamart": ["@profullstack/pwamart@0.10.1", "", { "dependencies": { "@profullstack/auth-system": "^0.8.3", "@profullstack/hqtui": "^0.11.1" }, "bin": { "pwamart": "bin/pwamart.mjs" } }, "sha512-gSm4ry+JNIrZC4Lh7out9sYIEUxrZdaxB3PbhyiIYpdcg/zcixJPEbr4Nwb1PXKyRYZZqXCMMVaeqhu2hh3y/g=="],
 
     "tsyringe/tslib": ["tslib@1.14.1", "", {}, "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg=="],
   }

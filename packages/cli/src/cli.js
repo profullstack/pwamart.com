@@ -36,6 +36,9 @@ Account (OAuth 2.1: opens your browser, no keys to paste)
   pwamart login --key pm_live_…          or use an API key from pwamart.com/console/keys
   pwamart logout                         revoke this sign-in and forget it
   pwamart whoami
+  pwamart redeem <code>                  redeem a credit code for Pro days (PM-XXXX-XXXX-XXXX-XXXX)
+  pwamart invites [--json]               your invites left, their state, your open ?ref= link
+  pwamart invite [--note "for Ada"]      make a single-use invite link (new accounts; you both get Pro days)
 
 Publish
   pwamart publisher <name> [--slug S] [--website URL]
@@ -508,6 +511,27 @@ export async function main(argv = process.argv.slice(2)) {
       if (!rest[0]) throw new Error('usage: pwamart subscribe <email>');
       const r = await api.subscribe(auth, rest[0]);
       out(r, `✓ ${r.message}`);
+      return 0;
+    }
+    case 'redeem': {
+      if (!rest[0]) throw new Error('usage: pwamart redeem <code>');
+      const r = await api.redeem(auth, rest.join(' '));
+      out(r, `✓ ${r.days} days of Pro, through ${String(r.ends_at).slice(0, 10)}`);
+      return 0;
+    }
+    case 'invites': {
+      const r = await api.invites(auth);
+      out(r, [
+        `${r.quota.left} of ${r.quota.total} invites left · ${r.invited} accepted${r.bonus_days ? ` · ${r.bonus_days} Pro days each side` : ''}`,
+        ...r.invites.map((i) => `${String(i.created_at).slice(0, 10)}  ${(i.revoked ? 'withdrawn' : i.used ? 'accepted' : 'open').padEnd(9)}  ${i.note}`),
+        `Open link: ${r.affiliate_url}`,
+        'Make one: pwamart invite --note "for Ada"',
+      ].join('\n'));
+      return 0;
+    }
+    case 'invite': {
+      const r = await api.createInvite(auth, flags.note ?? '');
+      out(r, `✓ ${r.url}\n  works once, for a new account; ${r.quota.left} invites left`);
       return 0;
     }
     case 'apps': {

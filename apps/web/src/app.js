@@ -12,7 +12,7 @@ import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, feat
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { advertisePage, appPage, leaderboardPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, invitePage, leaderboardPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
 import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, installScript, mcpConfig, pick, summarize } from './collections.js';
 import { surfaceKey } from './surfaces.js';
@@ -26,6 +26,7 @@ import { commentsFor } from './community.js';
 import { leaderboard as leaderboardMiddleware } from '@profullstack/leaderboard/hono';
 import { saveSignupProfile } from '@profullstack/profile';
 import { PROFILE_ENHANCE_SCRIPT, profileTemplate, profiles } from './user-profile.js';
+import * as credits from './credits.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUB = join(here, '..', 'public');
@@ -73,6 +74,16 @@ app.use('/api/v1/*', async (c, next) => {
   await next();
   // Only bearer-key requests are cross-origin; a cookie never rides along with '*'.
   c.header('access-control-allow-origin', '*');
+});
+
+// ?ref=<affiliate code> on any page: remembered for 30 days, first touch wins
+// (an existing cookie is never overwritten). Only a new account ever uses it.
+app.use('*', async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET') return;
+  const ref = credits.cleanRef(c.req.query('ref'));
+  if (!ref || getCookie(c, credits.REF_COOKIE)) return;
+  c.header('set-cookie', `${credits.REF_COOKIE}=${ref}; Path=/; Max-Age=${30 * 86400}; SameSite=Lax${config.isProd ? '; Secure' : ''}`, { append: true });
 });
 
 /* ---------------------------------------------------------------- stats -- */
@@ -324,7 +335,18 @@ app.get('/healthz', (c) => c.text('ok'));
 // for the sign-up form and the contact panel.
 const shell = (c) =>
   c.html(pub('console/index.html').toString().replace('</body>', `${profileTemplate()}\n</body>`), 200, { 'cache-control': 'no-cache' });
-for (const p of ['/console', '/console/*', '/signin', '/signup']) app.get(p, shell);
+for (const p of ['/console', '/console/*', '/signin', '/signup', '/invites']) app.get(p, shell);
+
+// An invite link. Remembered in a cookie (and then on the emailed sign-in link)
+// until the person signs up; spent only by an account that sign-up creates.
+app.get('/i/:code', async (c) => {
+  const code = credits.canonicalInvite(c.req.param('code'));
+  const state = code ? await credits.inviteState(code).catch(() => 'invalid') : 'invalid';
+  const user = await auth.userFromSession(getCookie(c, config.session.cookie)).catch(() => null);
+  if (state === 'ok' && !user)
+    c.header('set-cookie', `${credits.INVITE_COOKIE}=${code}; Path=/; Max-Age=${30 * 86400}; HttpOnly; SameSite=Lax${config.isProd ? '; Secure' : ''}`, { append: true });
+  return c.html(invitePage({ code, state, signedIn: Boolean(user), days: credits.bonusDays() }), state === 'ok' ? 200 : 404, { 'cache-control': 'no-store' });
+});
 
 const asset = (file, type, cache = 'no-cache') => (c) => c.body(pub(file), 200, { 'content-type': type, 'cache-control': cache });
 app.get('/assets/store.css', asset('store.css', 'text/css; charset=utf-8'));
@@ -362,6 +384,16 @@ app.get('/auth/magic', async (c) => {
       console.error(`[auth] signup profile save failed: ${err?.message ?? err}`),
     );
   c.header('set-cookie', auth.sessionCookie(s.sessionId));
+  // A brand-new account takes the invite and ?ref= it came with: from the link
+  // first (another device counts), else this browser's cookies.
+  if (s.created) {
+    const w = await credits.welcomeNewAccount(s.user, {
+      invite: s.invite ?? getCookie(c, credits.INVITE_COOKIE),
+      ref: s.ref ?? getCookie(c, credits.REF_COOKIE),
+    });
+    if (w.invite) console.log(`[invites] ${s.user.id}: ${w.invite.invite.ok ? `accepted, bonus ${w.invite.bonus}` : `refused ${w.invite.invite.reason}`}`);
+  }
+  c.header('set-cookie', `${credits.INVITE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`, { append: true });
   // Back to where sign-in started (e.g. the CLI's consent page): same-site paths only.
   const next = decodeURIComponent(getCookie(c, 'pm_next') ?? '');
   if (next.startsWith('/') && !next.startsWith('//')) {
@@ -674,6 +706,8 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
+- POST /credits/redeem {code}              redeem a credit code (PM-…) for Pro days; GET /credits lists them
+- GET  /invites | POST /invites {note}     your invites (3, single use, new accounts) + open ?ref= link; both sides get Pro days
 - POST /apps/:slug/feature {credit: true}  spend a karma credit: a free Featured week, no payment
 - POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue + a free CrawlProof ad
 - GET  /network                            store counts + 30-day CrawlProof network reach (what featuring buys)
