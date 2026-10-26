@@ -16,6 +16,13 @@
 form.stack { display: grid; gap: 14px; max-width: 620px; }
 label.f { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
 label.f small { font-weight: 400; color: var(--muted); }
+/* The shared profile fields (@profullstack/profile), made to read like the label.f boxes. */
+.pfs-profile { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 14px; }
+.pfs-profile__row { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.pfs-profile__row input { font: 15px var(--sans); padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 100%; }
+.pfs-profile__row input:focus { outline: 2px solid var(--orange); outline-offset: 0; }
+.pfs-profile__optional { font-weight: 400; color: var(--muted); }
+.pfs-profile__error { color: var(--orange-ink); font-size: 14px; font-weight: 400; margin: 0; }
 .f input, .f select, .f textarea {
   font: 15px var(--sans); padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 100%;
 }

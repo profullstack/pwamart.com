@@ -32,11 +32,17 @@ export const expectedOrigins = () => {
 
 /* -------------------------------------------------------------- magic link -- */
 
-export async function createLoginLink(email) {
+/**
+ * `profile` is the validated signup form (@profullstack/profile fields), held on
+ * the token because the account row does not exist until the link is spent.
+ * Bound as text and cast, so the driver never JSON-encodes the string a second time.
+ */
+export async function createLoginLink(email, { profile = null } = {}) {
   const token = randomBytes(32).toString('base64url');
   await db()`
-    insert into login_tokens (token_hash, email, expires_at)
-    values (${sha(token)}, ${email.trim().toLowerCase()}, ${new Date(Date.now() + TOKEN_TTL_MINUTES * 60_000)})`;
+    insert into login_tokens (token_hash, email, expires_at, profile)
+    values (${sha(token)}, ${email.trim().toLowerCase()}, ${new Date(Date.now() + TOKEN_TTL_MINUTES * 60_000)},
+            ${profile ? JSON.stringify(profile) : null}::text::jsonb)`;
   return `${config.siteUrl}/auth/magic?t=${token}`;
 }
 
@@ -47,8 +53,27 @@ export async function consumeLoginLink(token, { userAgent } = {}) {
     where token_hash = ${sha(token)} and used_at is null and expires_at > now()
     returning email`;
   if (!row) return null;
+  const profile = await takeSignupProfile(sha(token));
   const user = await findOrCreateUser(row.email);
-  return { user, sessionId: await startSession(user.id, userAgent) };
+  return { user, sessionId: await startSession(user.id, userAgent), profile };
+}
+
+/**
+ * The signup fields a just-spent link carried, handed out once and then cleared.
+ * RETURNING sees the row after the update, so the old value comes from a subquery.
+ */
+async function takeSignupProfile(tokenHash) {
+  const [row] = await db()`
+    update login_tokens t set profile = null
+    from (
+      select token_hash, profile from login_tokens
+      where token_hash = ${tokenHash} and used_at is not null and profile is not null
+      for update
+    ) old
+    where t.token_hash = old.token_hash
+    returning old.profile`;
+  if (!row) return null;
+  return typeof row.profile === 'string' ? JSON.parse(row.profile) : row.profile;
 }
 
 export async function findOrCreateUser(email) {

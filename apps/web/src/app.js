@@ -24,6 +24,8 @@ import * as newsletter from './newsletter.js';
 import * as karma from './karma.js';
 import { commentsFor } from './community.js';
 import { leaderboard as leaderboardMiddleware } from '@profullstack/leaderboard/hono';
+import { saveSignupProfile } from '@profullstack/profile';
+import { PROFILE_ENHANCE_SCRIPT, profileTemplate, profiles } from './user-profile.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUB = join(here, '..', 'public');
@@ -318,14 +320,21 @@ app.get('/healthz', (c) => c.text('ok'));
 
 /* -------------------------------------------------- console (the SPA) -- */
 
-const shell = (c) => c.html(pub('console/index.html').toString(), 200, { 'cache-control': 'no-cache' });
-for (const p of ['/console', '/console/*', '/signin']) app.get(p, shell);
+// The shell carries the shared profile fields as a <template> (user-profile.js)
+// for the sign-up form and the contact panel.
+const shell = (c) =>
+  c.html(pub('console/index.html').toString().replace('</body>', `${profileTemplate()}\n</body>`), 200, { 'cache-control': 'no-cache' });
+for (const p of ['/console', '/console/*', '/signin', '/signup']) app.get(p, shell);
 
 const asset = (file, type, cache = 'no-cache') => (c) => c.body(pub(file), 200, { 'content-type': type, 'cache-control': cache });
 app.get('/assets/store.css', asset('store.css', 'text/css; charset=utf-8'));
 app.get('/assets/store.js', asset('store.js', 'text/javascript; charset=utf-8'));
 app.get('/assets/console.js', asset('console/console.js', 'text/javascript; charset=utf-8'));
 app.get('/assets/console.css', asset('console/console.css', 'text/css; charset=utf-8'));
+// The sign-up form's company-from-work-email helper (@profullstack/profile).
+app.get('/assets/profile.js', (c) =>
+  c.body(PROFILE_ENHANCE_SCRIPT, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600' }),
+);
 const WEBAUTHN_JS = [join(here, '..', 'node_modules'), join(root, 'node_modules')]
   .map((d) => join(d, '@simplewebauthn/browser/dist/bundle/index.umd.min.js'))
   .map((p) => {
@@ -345,6 +354,13 @@ app.get('/auth/magic', async (c) => {
   const token = c.req.query('t');
   const s = token ? await auth.consumeLoginLink(token, { userAgent: c.req.header('user-agent') }) : null;
   if (!s) return c.redirect('/signin?error=expired', 302);
+  // The fields typed on the sign-up form, saved now that the account exists and the
+  // link has proved the mailbox. A failure must not cost anybody their sign-in: the
+  // console's contact panel asks again.
+  if (s.profile)
+    await saveSignupProfile(profiles, s.user.id, s.profile, { email: s.user.email }).catch((err) =>
+      console.error(`[auth] signup profile save failed: ${err?.message ?? err}`),
+    );
   c.header('set-cookie', auth.sessionCookie(s.sessionId));
   // Back to where sign-in started (e.g. the CLI's consent page): same-site paths only.
   const next = decodeURIComponent(getCookie(c, 'pm_next') ?? '');

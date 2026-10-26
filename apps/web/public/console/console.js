@@ -40,7 +40,7 @@ function go(path) {
   route();
 }
 document.addEventListener('click', (ev) => {
-  const a = ev.target.closest('a[href^="/console"], a[href="/signin"]');
+  const a = ev.target.closest('a[href^="/console"], a[href="/signin"], a[href="/signup"]');
   if (!a || ev.metaKey || ev.ctrlKey || a.target) return;
   ev.preventDefault();
   go(a.getAttribute('href'));
@@ -94,12 +94,13 @@ async function route() {
     view.innerHTML = errBox(err);
     return;
   }
-  if (!me && p !== '/signin') return go(`/signin?next=${encodeURIComponent(p + location.search)}`);
-  if (me && p === '/signin') return goNext(new URLSearchParams(location.search).get('next'));
+  const out = p === '/signin' || p === '/signup';
+  if (!me && !out) return go(`/signin?next=${encodeURIComponent(p + location.search)}`);
+  if (me && out) return goNext(new URLSearchParams(location.search).get('next'));
   nav();
   window.scrollTo(0, 0);
   try {
-    if (p === '/signin') return signin();
+    if (out) return signin(p === '/signup');
     if (p === '/console') return overview();
     if (p === '/console/submit') return submit();
     if (p === '/console/apps') return appsList();
@@ -134,39 +135,81 @@ const SIGNIN_ERRORS = {
   'coinpay-off': 'Sign in with CoinPay is not switched on yet.',
 };
 
-function signin() {
+/*
+ * The shared profile fields (@profullstack/profile), rendered by the server into
+ * the shell's <template id="profile-fields"> so the markup is the package's own.
+ * Cloned into the sign-up form and the contact panel; email is each form's own box.
+ */
+function profileFields(values = {}) {
+  const frag = $('#profile-fields').content.cloneNode(true);
+  frag.querySelectorAll('input').forEach((i) => {
+    if (values[i.name] != null) i.value = values[i.name];
+  });
+  return frag;
+}
+function fieldErrors(form, errors = {}) {
+  form.querySelectorAll('.pfs-profile__error').forEach((el) => el.remove());
+  form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
+  for (const [name, msg] of Object.entries(errors)) {
+    const input = form.querySelector(`[name="${name}"]`);
+    if (!input) continue;
+    input.setAttribute('aria-invalid', 'true');
+    const p = document.createElement('p');
+    p.className = 'pfs-profile__error';
+    p.setAttribute('role', 'alert');
+    p.textContent = msg;
+    input.after(p);
+  }
+}
+// The package's company-from-work-email helper binds to the forms on the page when it
+// runs, so it is loaded after the form exists.
+function enhanceProfile() {
+  const s = document.createElement('script');
+  s.src = '/assets/profile.js';
+  document.body.append(s);
+  s.onload = () => s.remove();
+}
+
+function signin(signup = false) {
   const q = new URLSearchParams(location.search);
+  const keep = q.toString() ? `?${q}` : '';
   // Remember where sign-in started across the emailed link (the server reads pm_next).
   const nx = q.get('next');
   if (nx && nx.startsWith('/') && !nx.startsWith('//') && !nx.startsWith('/console'))
     document.cookie = `pm_next=${encodeURIComponent(nx)}; Path=/; Max-Age=1800; SameSite=Lax`;
   view.innerHTML = `<div class="signin">
     <div class="eyebrow">Publisher console</div>
-    <h1>Sign in to pwamart</h1>
-    <p class="muted">No passwords. We email you a link, or use a passkey you saved before.</p>
+    <h1>${signup ? 'Create your pwamart account' : 'Sign in to pwamart'}</h1>
+    <p class="muted">No passwords. We email you a link${signup ? '; the account is made when you open it.' : ', or use a passkey you saved before.'}</p>
     ${q.get('error') === 'expired' ? '<p class="err">That link expired or was already used. Send a new one.</p>' : ''}
     ${SIGNIN_ERRORS[q.get('error')] ? `<p class="err">${SIGNIN_ERRORS[q.get('error')]}</p>` : ''}
     <a class="btn dark" style="width:100%;margin-bottom:6px" href="/api/v1/coinpay/login?next=${encodeURIComponent(q.get('next') || '/console')}">Continue with CoinPay</a>
     <div class="or">or</div>
     <form class="stack" id="f">
       <label class="f">Email<input type="email" name="email" required autocomplete="email webauthn" placeholder="you@company.com"></label>
-      <button class="btn primary">Email me a sign-in link</button>
+      <button class="btn primary">${signup ? 'Email me a sign-up link' : 'Email me a sign-in link'}</button>
     </form>
-    <div class="or">or</div>
-    <button class="btn" id="pk" style="width:100%">Sign in with a passkey</button>
+    ${signup ? '' : '<div class="or">or</div>\n    <button class="btn" id="pk" style="width:100%">Sign in with a passkey</button>'}
     <p id="msg"></p>
+    <p class="muted" style="font-size:14px">${signup ? `Already have an account? <a href="/signin${keep}">Sign in</a>` : `New to pwamart? <a href="/signup${keep}">Create an account</a>`}</p>
   </div>`;
+  if (signup) {
+    $('#f button').before(profileFields());
+    enhanceProfile();
+  }
   $('#f').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const email = new FormData(ev.target).get('email');
+    const fields = Object.fromEntries(new FormData(ev.target));
     try {
-      await api('/auth/link', { method: 'POST', body: { email } });
-      $('#msg').innerHTML = `<span class="ok-msg">Check ${esc(email)} for a link. It works once and lasts 20 minutes.</span>`;
+      await api('/auth/link', { method: 'POST', body: signup ? { ...fields, signup: true } : { email: fields.email } });
+      fieldErrors(ev.target);
+      $('#msg').innerHTML = `<span class="ok-msg">Check ${esc(fields.email)} for a link. It works once and lasts 20 minutes.</span>`;
     } catch (err) {
+      fieldErrors(ev.target, err.body?.errors);
       $('#msg').innerHTML = errBox(err);
     }
   });
-  $('#pk').addEventListener('click', async () => {
+  $('#pk')?.addEventListener('click', async () => {
     try {
       if (!window.SimpleWebAuthnBrowser) throw new Error('Passkeys are not available in this browser');
       const { options, challengeId } = await api('/auth/passkey/login/options', { method: 'POST' });
@@ -807,8 +850,10 @@ async function claimView(slug) {
 /* ----------------------------------------------------------------- keys -- */
 
 async function keys() {
-  const { keys: list } = await api('/keys');
+  const [{ keys: list }, { profile }] = await Promise.all([api('/keys'), api('/me/profile')]);
   view.innerHTML = `<div class="page-head"><h1>API keys &amp; passkeys</h1></div>
+    <div class="panel" style="margin-bottom:22px"><h3>Contact details</h3><p class="muted">Private to your account. Sent with ${esc(me.user.email)}.</p>
+      <form class="stack" id="pf"><button class="btn sm dark" style="justify-self:start">Save contact details</button> <span id="pmsg"></span></form></div>
     <div class="panel" style="margin-bottom:22px"><h3>CoinPay</h3><p class="muted">${me.user.coinpay ? 'Connected: you can sign in with CoinPay.' : 'Connect your CoinPay account to sign in with it.'}${new URLSearchParams(location.search).get('coinpay') === 'taken' ? ' <span class="err">That CoinPay account is already connected to a different pwamart account.</span>' : ''}</p>${me.user.coinpay ? '' : '<a class="btn sm dark" href="/api/v1/coinpay/login?next=/console/keys">Connect CoinPay</a>'}</div>
     <div class="panel" style="margin-bottom:22px"><h3>Passkeys</h3><p class="muted">${me.user.passkeys ? `You have ${me.user.passkeys} saved.` : 'Sign in with Face ID, Touch ID or a security key next time.'}</p><button class="btn sm dark" id="addpk">Add a passkey</button> <span id="kmsg"></span></div>
     <h2 style="margin-bottom:6px">API keys</h2>
@@ -816,6 +861,18 @@ async function keys() {
     <form class="row" id="kf" style="margin:12px 0 18px"><input class="f" name="name" placeholder="Key name, e.g. laptop" style="padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)"><button class="btn dark sm">Create key</button></form>
     <div id="newkey"></div>
     ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${list.map((k) => `<tr><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}…</code></td><td>${k.last_used_at ? esc(k.last_used_at.slice(0, 10)) : 'never'}</td><td><button class="btn sm" data-revoke="${esc(k.id)}">Revoke</button></td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  $('#pf button').before(profileFields(profile));
+  $('#pf').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      await api('/me/profile', { method: 'PATCH', body: Object.fromEntries(new FormData(ev.target)) });
+      fieldErrors(ev.target);
+      $('#pmsg').innerHTML = '<span class="ok-msg">Saved.</span>';
+    } catch (err) {
+      fieldErrors(ev.target, err.body?.errors);
+      $('#pmsg').innerHTML = errBox(err);
+    }
+  });
   $('#kf').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const k = await api('/keys', { method: 'POST', body: { name: new FormData(ev.target).get('name') || 'default' } });
