@@ -18,7 +18,7 @@ import { send, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
 import { appBadgeRow, appBySite, badgeSnippets, checkBadge, siteHost, siteSnippet } from './badge.js';
 import * as karma from './karma.js';
-import { CommentError, addComment, commentsFor, deleteComment, payReview, share as shareApp, unvote, upvote, voteState } from './community.js';
+import { CommentError, addComment, commentsFor, deleteComment, payReview, share as shareApp, unvote, upvote, votedSlugs, voteState } from './community.js';
 import { mountProfileRoutes, validateProfile } from '@profullstack/profile';
 import { profiles } from './user-profile.js';
 
@@ -420,6 +420,13 @@ api.get('/apps/:slug/vote', async (c) => {
   const row = await getApp(c.req.param('slug'));
   if (!row) return c.json({ error: 'no such app' }, 404);
   return c.json(await voteState(row, await currentUser(c).catch(() => null)));
+});
+
+/** The card grids: which of `?apps=a,b,c` the reader has upvoted, in one request. */
+api.get('/votes', async (c) => {
+  const user = await currentUser(c).catch(() => null);
+  const slugs = [...new Set((c.req.query('apps') ?? '').split(',').map((x) => x.trim()).filter(Boolean))].slice(0, 100);
+  return c.json({ signed_in: Boolean(user), voted: await votedSlugs(user, slugs) });
 });
 
 /** Upvote: one per member per app. POST is idempotent; DELETE takes it back. */

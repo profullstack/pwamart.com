@@ -157,6 +157,17 @@ section.block { padding: 36px 0; }
 .card .name { font-weight: 650; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .by { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .sum { font-size: 13.5px; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.app-card .name a { color: inherit; text-decoration: none; }
+.app-card .name a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.app-card .name a:focus-visible { outline: none; }
+.app-card:has(.name a:focus-visible) { outline: 2px solid var(--orange); outline-offset: 2px; }
+.card-vote {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 4px; margin: -3px 0; padding: 2px 8px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); font: inherit; color: var(--ink-2); cursor: pointer;
+}
+.card-vote:hover { border-color: var(--orange); color: var(--orange); }
+.card-vote.on { background: var(--orange); border-color: var(--orange); color: #fff; }
+.card-vote[disabled] { opacity: 0.6; cursor: wait; }
 .card .meta { margin-top: auto; padding-top: 6px; display: flex; gap: 10px; font: 11.5px var(--mono); color: var(--muted); }
 .tag {
   display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 2px 8px; border-radius: 999px;

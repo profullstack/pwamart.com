@@ -3,6 +3,7 @@ import { siteFooter } from './footer.js';
 import { publisherPosts } from './share-posts.js';
 import { claudeMcpLines, mcpConfig } from './collections.js';
 import { BADGE_H, BADGE_W, badgeSnippets } from './badge.js';
+import { ACTIONS, perCredit } from './karma.js';
 
 /**
  * Server-rendered store pages. Plain template strings: every value from the
@@ -292,16 +293,16 @@ const stars = (r) => (r ? `★ ${Number(r).toFixed(1)}` : 'new');
 const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n ?? 0));
 
 export function card(app) {
-  return `<a class="card" href="/apps/${e(app.slug)}">
+  return `<article class="card app-card">
   ${icon(app)}
   <div class="body">
-    <div class="name">${e(app.name)}</div>
+    <div class="name"><a href="/apps/${e(app.slug)}">${e(app.name)}</a></div>
     <div class="by">${e(app.publisher.name)} ${app.publisher.verified ? CHECK : ''}</div>
     <div class="sum">${e(app.summary ?? '')}</div>
-    <div class="meta"><span title="upvotes">▲ ${fmt(app.votes ?? 0)}</span><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
+    <div class="meta"><button class="card-vote" type="button" data-card-vote="${e(app.slug)}" aria-pressed="false" title="Upvote ${e(app.name)} (+1 karma)">▲ <b>${fmt(app.votes ?? 0)}</b></button><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
     <div class="flags">${surfaceFlags(app)}${app.offline ? OFFLINE_TAG : ''}</div>
   </div>
-</a>`;
+</article>`;
 }
 
 /** PWA / CLI / API / MCP / Desktop: what an app can be used as. `all` also shows the ones it is not. */
@@ -454,7 +455,8 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
   const body = `<div class="wrap">
   <section class="block" style="padding-top:40px">
     <div class="eyebrow">${e(list.total)} result${list.total === 1 ? '' : 's'}</div>
-    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 22px">${e(title)}</h1>
+    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(title)}</h1>
+    <p class="muted" style="font-size:13.5px;margin:0 0 18px">Tap ▲ on any app you like: +${ACTIONS.vote.points} karma a vote, up to ${ACTIONS.vote.daily} a day. Every ${perCredit()} karma is a free Featured week. <a href="/leaderboard#earn">How to earn</a></p>
     ${publisher ? `<div class="chips" style="margin-bottom:12px"><a class="chip on" href="/publishers/${e(publisher.slug)}">${e(publisher.name)}</a><a class="chip" href="/apps">✕ all publishers</a><a class="chip" href="/publishers">Browse publishers →</a></div>` : ''}
     ${categoryChips(counts, category, keep)}
     ${offlineChip}

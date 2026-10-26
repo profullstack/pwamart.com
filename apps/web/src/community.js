@@ -14,6 +14,14 @@ export async function voteState(app, user) {
   return { voted: Boolean(v), votes, signed_in: Boolean(user) };
 }
 
+/** Which of these apps (by slug) the member has upvoted: one query for a whole grid of cards. */
+export async function votedSlugs(user, slugs) {
+  if (!user || !slugs.length) return [];
+  const rows = await db()`select a.slug from app_votes v join apps a on a.id = v.app_id
+                          where v.user_id = ${user.id} and a.slug = any(${slugs}::text[])`;
+  return rows.map((r) => r.slug);
+}
+
 /**
  * Upvote (idempotent). Pays the voter +1 and the app's owner +1, unless the voter
  * is in the org that publishes it. Taking a vote back does not undo what was paid,

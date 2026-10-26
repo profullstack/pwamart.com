@@ -146,6 +146,13 @@ d('karma end to end', () => {
     expect((await req(null)('GET', '/apps?sort=votes&limit=100')).body.apps[0].slug).toBe(s);
   });
 
+  test('card grids: one GET /votes says which listed apps the reader upvoted', async () => {
+    const s = slug();
+    expect((await req(null)('GET', `/votes?apps=${s},nope`)).body).toEqual({ signed_in: false, voted: [] });
+    expect((await calls.fan('GET', `/votes?apps=${s},nope,${s}`)).body).toEqual({ signed_in: true, voted: [s] });
+    expect((await calls.fan('GET', '/votes')).body).toEqual({ signed_in: true, voted: [] });
+  });
+
   test('self-dealing earns nothing: own votes, reviews, comments and shares', async () => {
     const s = slug();
     const before = await total(users.maker);

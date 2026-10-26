@@ -199,7 +199,7 @@ review?.addEventListener('submit', async (ev) => {
  */
 function askSignin(near) {
   const prompt = (near?.closest('section, .install-box, .panel') ?? document).querySelector('[data-signin-prompt]') ?? $('[data-signin-prompt]');
-  if (!prompt) return location.assign(`/signin?next=${encodeURIComponent(location.pathname + location.hash)}`);
+  if (!prompt) return location.assign(`/signin?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   const next = encodeURIComponent(location.pathname + location.hash);
   prompt.querySelectorAll('a').forEach((a) => (a.href = a.href.replace(/next=[^&]*/, `next=${next}`)));
   prompt.hidden = false;
@@ -235,6 +235,42 @@ if (upvoteBtn) {
     paint(st);
     karmaToast(st.karma);
   });
+}
+
+// Card upvotes (/apps, home, publisher pages): one request learns which cards the
+// reader already voted; a click votes or takes it back, and a paid vote toasts +1 karma.
+const cardVotes = [...document.querySelectorAll('[data-card-vote]')];
+if (cardVotes.length) {
+  const paintCard = (btn, st) => {
+    btn.setAttribute('aria-pressed', String(st.voted));
+    btn.classList.toggle('on', st.voted);
+    if (st.votes != null) btn.querySelector('b').textContent = st.votes;
+  };
+  const slugs = [...new Set(cardVotes.map((b) => b.dataset.cardVote))].slice(0, 100);
+  fetch(`/api/v1/votes?apps=${slugs.map(encodeURIComponent).join(',')}`)
+    .then((r) => r.json())
+    .then(({ voted }) => cardVotes.forEach((b) => (voted ?? []).includes(b.dataset.cardVote) && paintCard(b, { voted: true })))
+    .catch(() => {});
+  for (const btn of cardVotes) {
+    btn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const slug = btn.dataset.cardVote;
+      const on = btn.getAttribute('aria-pressed') === 'true';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/v1/apps/${encodeURIComponent(slug)}/vote`, { method: on ? 'DELETE' : 'POST' });
+        if (res.status === 401) return askSignin(btn);
+        const st = await res.json().catch(() => ({}));
+        if (!res.ok) return toast(st.error ?? 'Could not vote');
+        // The same app can sit in two grids on one page (home: featured + top).
+        cardVotes.filter((b) => b.dataset.cardVote === slug).forEach((b) => paintCard(b, st));
+        karmaToast(st.karma);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 }
 
 // Comments: post, reply (one level), delete your own.
