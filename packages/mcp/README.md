@@ -15,5 +15,7 @@ Or use the hosted endpoint with no install: `https://pwamart.com/mcp` (streamabl
 | `list_categories` | no |
 | `install_app`: steps and command for ios, android, desktop, linux, macos, windows, tron | no |
 | `submit_app`, `verify_app`, `publish_app` | `PWAMART_API_KEY` |
+| `leaderboard`, `list_comments` | no |
+| `my_karma`, `upvote_app`, `review_app`, `comment`, `feature_app` (`credit: true` spends a free Featured week) | `PWAMART_API_KEY` or `pwamart login` |
 
 `PWAMART_URL` points it at another server.

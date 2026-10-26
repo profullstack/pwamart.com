@@ -156,7 +156,7 @@ d('store end to end', () => {
     expect((await call('POST', '/apps/notes/verify')).status).toBe(409);
     token.value = s.body.verify.token;
     const v = await call('POST', '/apps/notes/verify');
-    expect(v.body).toEqual({ verified: true, method: 'well-known' });
+    expect(v.body).toMatchObject({ verified: true, method: 'well-known' });
     const p = await call('POST', '/apps/notes/publish');
     expect(p.body.status).toBe('published');
   });

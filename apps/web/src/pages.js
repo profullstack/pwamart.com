@@ -72,6 +72,7 @@ ${head}
     <a href="/apps">Browse</a>
     <a href="/collections">Collections</a>
     <a href="/publishers">Publishers</a>
+    <a href="/leaderboard">Leaderboard</a>
     <a href="/developers">Developers</a>
     <a href="/pricing">Pricing</a>
     <a class="keep" href="/console">Console</a>
@@ -95,7 +96,7 @@ ${
   <nav class="webring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F" rel="next" title="Next site">&gt;&gt;</a></nav><span style="display:inline-flex;flex-wrap:wrap;gap:.6rem;align-items:center"><a class="builtindie-badge" href="https://built.indie.pit.world/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://built.indie.pit.world/for.svg?site=https://pwamart.com/" alt="Listed on built.indie" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a><a class="pwamart-badge" href="https://pwamart.com/for?site=https://pwamart.com/" style="display:inline-block;line-height:0"><img src="https://pwamart.com/for.svg?site=https://pwamart.com/" alt="Get it on pwamart" width="200" height="44" loading="lazy" style="display:block;max-width:100%"></a></span>
   <nav>
     <a href="/developers">Developers</a><a href="/developers#api">API</a><a href="/pricing">Pricing</a>
-    <a href="/advertise">Advertise</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
+    <a href="/advertise">Advertise</a><a href="/leaderboard">Karma</a><a href="/newsletter">Newsletter</a><a href="/llms.txt">llms.txt</a>
     <a href="https://github.com/profullstack/pwamart.com">GitHub</a>
   </nav>
 </div></footer>
@@ -140,6 +141,7 @@ export function shareBuilder(app) {
     ['linkedin', 'LinkedIn', `https://www.linkedin.com/sharing/share-offsite/?url=${enc(page)}`],
     ['reddit', 'Reddit', `https://www.reddit.com/submit?url=${enc(page)}&title=${enc(`${app.name}: install it on any device`)}`],
     ['hn', 'Hacker News', `https://news.ycombinator.com/submitlink?u=${enc(page)}&t=${enc(app.name)}`],
+    ['mastodon', 'Mastodon', `https://mastodonshare.com/?text=${enc(post)}`],
     ['facebook', 'Facebook', `https://www.facebook.com/sharer/sharer.php?u=${enc(page)}`],
     ['email', 'Email', `mailto:?subject=${enc(app.name)}&body=${enc(post)}`],
   ];
@@ -174,7 +176,7 @@ export function shareBuilder(app) {
           <button class="btn sm" type="button" data-native-share hidden>Share…</button>
           ${nets.map(([k, n, href]) => `<a class="btn sm" data-net="${k}" href="${e(href)}" target="_blank" rel="noopener">${n}</a>`).join('')}
         </div>
-        <p class="muted" style="font-size:12.5px;margin:10px 0 0">Mastodon, Threads, Discord or anywhere else: Copy post and paste.</p>
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">Threads, Discord or anywhere else: Copy post and paste. Signed in, sharing earns <a href="/leaderboard#earn">karma</a> (+1 per network a day).</p>
       </div>
     </div>
   </section>`;
@@ -296,7 +298,7 @@ export function card(app) {
     <div class="name">${e(app.name)}</div>
     <div class="by">${e(app.publisher.name)} ${app.publisher.verified ? CHECK : ''}</div>
     <div class="sum">${e(app.summary ?? '')}</div>
-    <div class="meta"><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
+    <div class="meta"><span title="upvotes">▲ ${fmt(app.votes ?? 0)}</span><span>${stars(app.rating)}</span><span>${fmt(app.installs)} installs</span><span>${e(app.category_name)}</span></div>
     <div class="flags">${surfaceFlags(app)}${app.offline ? OFFLINE_TAG : ''}</div>
   </div>
 </a>`;
@@ -355,7 +357,7 @@ function installBar() {
       </div>`;
 }
 
-export function homePage({ featured, top, fresh, counts, stats, features = {}, surfaces = {}, collections = [] }) {
+export function homePage({ featured, top, fresh, counts, stats, features = {}, surfaces = {}, collections = [], karma = null }) {
   const tints = ['#e5eadb', '#f3e2d6', '#e1e6ee', '#efe6cf'];
   const body = `
 <div class="wrap">
@@ -410,6 +412,7 @@ export function homePage({ featured, top, fresh, counts, stats, features = {}, s
   }
   <section class="block"><div class="block-head"><h2>Top apps</h2><a href="/apps?sort=top">See all →</a></div>${grid(top)}</section>
   <section class="block"><div class="block-head"><h2>New this week</h2><a href="/apps?sort=new">See all →</a></div>${grid(fresh)}</section>
+  ${karmaWidget(karma)}
 
   <section class="block">
     <div class="block-head"><h2>One store, every surface</h2></div>
@@ -447,7 +450,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     .map((k) => `<a class="chip${surface === k ? ' on' : ''}" data-surface="${k}" href="${e(qs(0, { surf: surface === k ? null : k }))}">${surface === k ? '✕ ' : ''}Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
     .join('');
   const offlineChip = `<div class="chips" style="margin-top:12px"><a class="chip${feature === 'offline' ? ' on' : ''}" data-feature="offline" href="${e(qs(0, { feat: feature === 'offline' ? null : 'offline' }))}">${feature === 'offline' ? '✕ ' : ''}Works offline <small>${e(features.offline ?? 0)}</small></a>${surfaceChips}</div>`;
-  const sorts = [['top', 'Top'], ['new', 'Newest'], ['rating', 'Top rated'], ['name', 'A–Z']];
+  const sorts = [['top', 'Top'], ['votes', 'Top voted'], ['new', 'Newest'], ['rating', 'Top rated'], ['name', 'A–Z']];
   const body = `<div class="wrap">
   <section class="block" style="padding-top:40px">
     <div class="eyebrow">${e(list.total)} result${list.total === 1 ? '' : 's'}</div>
@@ -476,7 +479,7 @@ const SURFACE_ICONS = {
   bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg>',
 };
 
-export function appPage({ app, publisher, reviews, related, releases = [], stats }) {
+export function appPage({ app, publisher, reviews, related, releases = [], comments = [], stats }) {
   const start = safeUrl(app.start_url) || safeUrl(app.url);
   const host = (() => {
     try {
@@ -521,6 +524,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       <div class="stats">
         <div><b>${app.rating ? `${Number(app.rating).toFixed(1)} ★` : '–'}</b><span>${e(app.rating_count)} ratings</span></div>
         <div><b>${fmt(app.installs)}</b><span>installs</span></div>
+        <div><b data-votes>${fmt(app.votes ?? 0)}</b><span>upvotes</span></div>
         <div><b>${app.score ?? '–'}${app.score !== null ? '%' : ''}</b><span>pwa score</span></div>
         <div><b>${app.verified ? 'Yes' : 'No'}</b><span>verified</span></div>
       </div>
@@ -532,6 +536,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       </button>
       <a class="btn" id="open" href="${e(start)}" target="_blank" rel="noopener">Open in browser</a>
       <div class="hint" id="install-hint">Free · works on phone, tablet and desktop</div>
+      <button class="btn upvote" type="button" id="upvote" data-slug="${e(app.slug)}" aria-pressed="false" title="Upvote ${e(app.name)}">▲ Upvote <b data-votes>${fmt(app.votes ?? 0)}</b></button>
       ${followButton('app', app.slug, app.name)}
     </div>
   </section>
@@ -569,12 +574,14 @@ export function appPage({ app, publisher, reviews, related, releases = [], stats
       ${badgeSection(app)}
 
       <h2 style="margin:36px 0 4px">Ratings &amp; reviews</h2>
-      ${reviews.length ? reviews.map((r) => `<div class="review"><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span> <b>${e(r.author)}</b><div class="prose">${e(r.body)}</div></div>`).join('') : '<p class="muted">No reviews yet.</p>'}
+      ${reviews.length ? reviews.map((r) => `<div class="review"><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span> <b>${e(r.author)}</b>${karmaChip(r.karma)}<div class="prose">${e(r.body)}</div></div>`).join('') : '<p class="muted">No reviews yet.</p>'}
       <form id="review" class="panel" style="margin-top:16px;display:grid;gap:10px" data-slug="${e(app.slug)}">
         <label>Your rating <select name="rating" required><option value="5">★★★★★</option><option value="4">★★★★</option><option value="3">★★★</option><option value="2">★★</option><option value="1">★</option></select></label>
         <textarea name="body" rows="3" placeholder="What is it like to use? (sign in to post)" style="font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink)"></textarea>
         <button class="btn sm dark" style="justify-self:start">Post review</button>
+        <p class="muted" style="margin:0;font-size:12.5px">A rating with 30+ characters earns 5 <a href="/leaderboard#earn">karma</a>.</p>
       </form>
+      ${commentsSection(app, comments)}
     </div>
     <aside style="display:grid;gap:14px;align-content:start">
       <div class="panel">
@@ -898,7 +905,19 @@ export function developersPage({ stats }) {
       <div><span class="p">GET</span>  /apps/:slug</div>
       <div><span class="p">POST</span> /apps                  <span class="p">{publisher, url}</span></div>
       <div><span class="p">POST</span> /apps/:slug/verify · /publish</div>
+      <div><span class="p">POST</span> /apps/:slug/vote · /comments · /reviews · /share</div>
+      <div><span class="p">GET</span>  /karma · /leaderboard?period=week</div>
     </div>
+  </section>
+  <section class="block" id="karma"><h2>Karma</h2>
+    <p>Members earn karma for upvoting, reviewing, commenting on and sharing apps, and for publishing and verifying their own; every 500 is a free Featured week. The points and rules are on the <a href="/leaderboard#earn">leaderboard</a>.</p>
+    <div class="term">
+      <div><span class="p">$</span> pwamart karma               <span class="p"># total, rank, credits, history</span></div>
+      <div><span class="p">$</span> pwamart leaderboard --period week</div>
+      <div><span class="p">$</span> pwamart vote &lt;slug&gt; · pwamart review &lt;slug&gt; --rating 5 --text "…" · pwamart comment &lt;slug&gt; "…"</div>
+      <div><span class="p">$</span> pwamart feature &lt;slug&gt; --credit   <span class="p"># spend a free Featured week</span></div>
+    </div>
+    <p>MCP tools: <code>my_karma</code>, <code>leaderboard</code>, <code>upvote_app</code>, <code>review_app</code>, <code>comment</code>, <code>list_comments</code>, and <code>feature_app</code> with <code>credit: true</code>.</p>
   </section>
   <section class="block" id="desktop"><h2>pwamart Desktop</h2>
     <p>An Electron app that browses the store and installs any listing as its own window with a launcher icon, on any OS, whatever your default browser is. It carries the CLI too. Downloads are on <a href="https://github.com/profullstack/pwamart.com/releases">GitHub releases</a>.</p>
@@ -1142,4 +1161,108 @@ export function publishersPage({ q, filter, sort, list, offset, limit, stats }) 
     stats,
     noindex: Boolean(q),
   });
+}
+
+/* -------------------------------------------------------------- karma -- */
+
+/** The small karma number next to a member's name on comments and reviews. */
+export const karmaChip = (n) => (n === null || n === undefined ? '' : ` <span class="karma-chip" title="karma">${e(compact(Number(n)))} karma</span>`);
+
+/**
+ * The signed-out prompt: CoinPay or an emailed link, and either way back to `next`
+ * (the page they were on). Server-rendered so it works with JS off; store.js hides
+ * it once it knows the reader is signed in.
+ */
+export function signinPrompt(next, what = 'upvote, comment and earn karma') {
+  const n = encodeURIComponent(next || '/');
+  return `<div class="signin-prompt" data-signin-prompt>
+    <span>Sign in to ${e(what)}:</span>
+    <a class="btn sm dark" href="/api/v1/coinpay/login?next=${n}">Continue with CoinPay</a>
+    <a class="btn sm" href="/signin?next=${n}">Email me a sign-in link</a>
+  </div>`;
+}
+
+function commentItem(c, slug) {
+  const when = new Date(c.created_at).toISOString().slice(0, 10);
+  return `<li class="comment" id="c-${e(c.id)}" data-comment-id="${e(c.id)}">
+    ${
+      c.deleted
+        ? '<div class="muted" style="font-size:13.5px">[deleted]</div>'
+        : `<div class="comment-head"><a href="/leaderboard/u/${e(c.player)}"><b>${e(c.author)}</b></a>${karmaChip(c.karma)}<time datetime="${e(new Date(c.created_at).toISOString())}">${when}</time><span class="comment-acts" data-comment-acts></span></div>
+    <div class="prose comment-body">${e(c.body)}</div>`
+    }
+    ${c.replies?.length ? `<ul class="comments replies">${c.replies.map((r) => commentItem(r, slug)).join('')}</ul>` : ''}
+  </li>`;
+}
+
+/** Comments on an app page: server-rendered, posted through the API by store.js. */
+export function commentsSection(app, comments = []) {
+  const n = comments.reduce((k, c) => k + (c.deleted ? 0 : 1) + (c.replies?.length ?? 0), 0);
+  return `<section class="comments-wrap" id="comments" data-slug="${e(app.slug)}">
+    <h2 style="margin:36px 0 4px">Comments${n ? ` <small class="muted">${n}</small>` : ''}</h2>
+    ${comments.length ? `<ul class="comments">${comments.map((c) => commentItem(c, app.slug)).join('')}</ul>` : '<p class="muted">No comments yet. Start the conversation.</p>'}
+    <form id="comment-form" class="panel" style="margin-top:16px;display:grid;gap:10px" data-slug="${e(app.slug)}">
+      <input type="hidden" name="parent" value="">
+      <div class="replying muted" hidden style="font-size:13px">Replying to a comment · <a href="#comments" data-cancel-reply>cancel</a></div>
+      <textarea name="body" rows="3" maxlength="2000" required placeholder="Ask a question or tell people what you think" style="font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink)"></textarea>
+      <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn sm dark">Post comment</button><span class="muted" style="font-size:12.5px">10+ characters earns 2 <a href="/leaderboard#earn">karma</a>.</span></div>
+    </form>
+    ${signinPrompt(`/apps/${app.slug}#comments`)}
+  </section>`;
+}
+
+/** The how-to-earn table (the same points as built.indie). */
+export function howToEarnTable(rows, perCredit = 500) {
+  return `<div class="table-wrap"><table class="table karma-table"><thead><tr><th>Do this</th><th>Karma</th><th>Rule</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td>${e(r.label)}</td><td><b>+${e(r.points)}</b></td><td class="muted">${e(r.rule)}</td></tr>`).join('')}
+  </tbody></table></div>
+  <p class="muted" style="font-size:13.5px">Every ${e(perCredit)} karma is a free <a href="/featured">Featured week</a> (worth $19) for one of your apps. Signed-in members only; your own apps and installs earn nothing; staff accounts are not ranked.</p>`;
+}
+
+function boardRows(rows) {
+  return `<ol class="lb-rows">${rows
+    .map(
+      (r) => `<li><span class="lb-rank">${e(r.rank)}</span><a class="lb-name" href="/leaderboard/u/${e(r.id)}">${e(r.name)}</a><span class="lb-badges">${r.badges.map((b) => `<span title="${e(b.label)}">${e(b.emoji)}</span>`).join('')}</span><b class="lb-val">${e(r.display)}</b></li>`,
+    )
+    .join('')}</ol>`;
+}
+
+/** Home page: top karma this week (all time when the week is quiet), never empty. */
+export function karmaWidget(board) {
+  const rows = board?.rows ?? [];
+  return `<section class="block"><div class="block-head"><h2>${board?.fallback ? 'Top karma, all time' : 'Top karma this week'}</h2><a href="/leaderboard">Leaderboard →</a></div>
+    <div class="panel karma-widget">
+      ${rows.length ? boardRows(rows) : '<p class="muted" style="margin:0 0 10px">Nobody has karma yet. Be the first on the board.</p>'}
+      <p class="muted" style="font-size:13.5px;margin:12px 0 0">Upvote, review, comment and share apps to earn karma. Every 500 is a free Featured week. <a href="/leaderboard#earn">How to earn</a></p>
+      ${signinPrompt('/leaderboard', 'start earning karma')}
+    </div></section>`;
+}
+
+const PERIOD_NAMES = { week: 'This week', month: 'This month', all: 'All time' };
+
+export function leaderboardPage({ board, period, fallback, earn, perCredit, stats }) {
+  const tabs = Object.entries(PERIOD_NAMES)
+    .map(([k, n]) => `<a class="chip${k === period ? ' on' : ''}" href="/leaderboard?period=${k}">${n}</a>`)
+    .join('');
+  const body = `<div class="wrap" style="max-width:860px">
+  <section class="block" style="padding-top:44px">
+    <div class="eyebrow">Karma</div>
+    <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 12px">Leaderboard</h1>
+    <p class="lede">Members earn karma for upvoting, reviewing, commenting on and sharing web apps, and for publishing their own. Every ${e(perCredit)} karma is a free Featured week.</p>
+    <div class="chips" style="margin:18px 0 0">${tabs}</div>
+  </section>
+  <section class="block" style="padding-top:0">
+    ${fallback ? `<p class="muted">Nobody has earned karma ${period === 'month' ? 'this month' : 'this week'} yet, so this is the all-time board. Earn one point and you are on top.</p>` : ''}
+    <div class="panel">${board.rows.length ? boardRows(board.rows) : '<p class="muted" style="margin:0">The board is empty. Upvote an app, write a review or leave a comment, and you are number one.</p>'}</div>
+    <div style="margin-top:14px">${signinPrompt('/leaderboard', 'join the board')}</div>
+    <p class="muted" style="font-size:13px;margin-top:10px"><a href="/leaderboard/karma.xml?period=${e(period)}">RSS</a> · <a href="/leaderboard/karma.json?period=${e(period)}">JSON</a> · <a href="/console/karma">Your karma</a></p>
+  </section>
+  <section class="block" id="earn"><h2 style="margin-bottom:10px">How to earn karma</h2>${howToEarnTable(earn, perCredit)}
+    <div class="hero-actions" style="margin-top:16px"><a class="btn primary" href="/apps?sort=votes">Find apps to upvote</a><a class="btn" href="/console/submit">Publish your PWA (+10)</a></div>
+  </section>
+  <section class="block"><h2 style="margin-bottom:10px">Badges</h2>
+    <p class="muted">✨ First karma (10) · 💯 100 karma · 🌟 1,000 karma · 🏅 Top ten this week · 👑 Number one. From the terminal: <code>pwamart karma</code>, <code>pwamart leaderboard</code>; agents: the <code>my_karma</code> and <code>leaderboard</code> MCP tools.</p>
+  </section>
+</div>`;
+  return layout({ title: 'Karma leaderboard', description: 'Who is upvoting, reviewing, commenting on and sharing the most web apps on pwamart this week.', path: '/leaderboard', body, stats });
 }

@@ -28,6 +28,22 @@ pwamart verify <slug> && pwamart publish <slug>
 pwamart surfaces <slug> --cli https://your.app/install.sh --mcp https://your.app/mcp
 ```
 
+## Karma
+
+Upvote, review, comment on and share apps (and publish your own) to earn karma; every 500 is a
+free Featured week. Same points as built.indie.
+
+```sh
+pwamart karma                              # total, rank, badges, free weeks, history, how to earn
+pwamart leaderboard --period week          # or month, all
+pwamart vote <slug>                        # --remove takes it back
+pwamart review <slug> --rating 5 --text "Installs in one tap and works offline."
+pwamart comment <slug> "Does it sync?"     # --reply <id>; pwamart comments <slug>
+pwamart feature <slug> --credit            # spend a free Featured week
+```
+
+In the TUI, `u` upvotes the selected app and `l` shows the karma board.
+
 Environment: `PWAMART_API_KEY`, `PWAMART_URL`, `PWAMART_BROWSER`.
 
 As a library: `@profullstack/pwamart/client` (the API), `/install` (app-window installer), `/tui`.

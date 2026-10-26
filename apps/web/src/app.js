@@ -12,7 +12,7 @@ import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, feat
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { advertisePage, appPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, leaderboardPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
 import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, installScript, mcpConfig, pick, summarize } from './collections.js';
 import { surfaceKey } from './surfaces.js';
@@ -21,6 +21,9 @@ import { trafficGuard } from './throttle.js';
 import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, theme as badgeTheme } from './badge.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
+import * as karma from './karma.js';
+import { commentsFor } from './community.js';
+import { leaderboard as leaderboardMiddleware } from '@profullstack/leaderboard/hono';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUB = join(here, '..', 'public');
@@ -101,8 +104,9 @@ app.get('/', async (c) => {
     allCollections(config.siteUrl),
     stats(),
   ]);
+  const top5 = await karma.topKarma({ limit: 5 }).catch(() => null);
   const workflows = collections.filter((x) => x.section === 'workflows');
-  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, surfaces, collections: workflows, stats: s }));
+  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, surfaces, collections: workflows, stats: s, karma: top5 }));
 });
 
 app.get('/apps', async (c) => {
@@ -138,15 +142,16 @@ app.get('/apps/:slug', async (c) => {
   const row = await getApp(c.req.param('slug'));
   if (!row) return c.html(notFoundPage({ stats: await stats() }), 404);
   const a = shape(row);
-  const [publisher, reviews, rel, s] = await Promise.all([
+  const [publisher, reviews, comments, rel, s] = await Promise.all([
     getPublisher(a.publisher.slug),
     reviewsFor(row.id),
+    commentsFor(row.id),
     listApps({ category: a.category, limit: 7 }),
     stats(),
   ]);
   const related = rel.apps.filter((x) => x.slug !== a.slug).slice(0, 6);
   const releases = await db()`select * from app_releases where app_id = ${row.id} order by created_at desc limit 3`;
-  return html(c, appPage({ app: a, publisher, reviews, related, releases, stats: s }));
+  return html(c, appPage({ app: a, publisher, reviews, comments, related, releases, stats: s }));
 });
 
 // iOS one-tap install: one app, or a bundle (?apps=a,b,c).
@@ -215,6 +220,23 @@ app.get('/publishers/:slug', async (c) => {
   if (!p) return c.html(notFoundPage({ stats: await stats() }), 404);
   return html(c, publisherPage({ publisher: p, list: await listApps({ publisher: p.slug, limit: 100 }), stats: await stats() }));
 });
+
+/* ---------------------------------------------------------- leaderboard -- */
+
+// Our page, in the site layout; the package serves the JSON, RSS, share cards and widget.
+app.get('/leaderboard', async (c) => {
+  const period = ['week', 'month', 'all'].includes(c.req.query('period')) ? c.req.query('period') : 'week';
+  const lb = karma.leaderboard();
+  let board = await lb.top({ board: 'karma', period, limit: 50 });
+  let fallback = false;
+  if (!board.rows.length && period !== 'all') {
+    board = await lb.top({ board: 'karma', period: 'all', limit: 50 });
+    fallback = true;
+  }
+  return c.html(leaderboardPage({ board, period, fallback, earn: karma.howToEarn(), perCredit: karma.perCredit(), stats: await stats() }), 200, { 'cache-control': 'public, max-age=30' });
+});
+app.get('/leaderboard.json', async (c) => (await karma.leaderboard().handle(c.req.raw)) ?? c.json({ error: 'not found' }, 404));
+app.use('/leaderboard/*', async (c, next) => leaderboardMiddleware(karma.leaderboard())(c, next));
 
 app.get('/pricing', async (c) => html(c, pricingPage({ stats: await stats(), net: networkStats() })));
 app.get('/developers', async (c) => html(c, developersPage({ stats: await stats() })));
@@ -587,6 +609,7 @@ app.get('/sitemap.xml', async (c) => {
     u('/featured'),
     u('/advertise'),
     u('/publishers'),
+    u('/leaderboard'),
     u('/newsletter'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     u('/apps?feature=offline'),
@@ -616,7 +639,15 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - GET  /apps/:slug                         details, publisher, reviews; app.surfaces = {pwa, cli, api, mcp, desktop} with install commands and downloads
 - GET  /surfaces                           how many apps are a PWA (all), a CLI, an API, an MCP server, a desktop app
 - GET  /collections, GET /collections/:slug   agentic workflow collections, each with one-command installs
-- POST /apps/:slug/installs {method}       count an install
+- POST /apps/:slug/installs {method}       count an install (installs never earn karma)
+- GET|POST|DELETE /apps/:slug/vote         upvote state / upvote (one per member) / take it back
+- GET  /apps/:slug/comments                comments with replies (one level), author karma
+- POST /apps/:slug/comments {body, parent?}   comment or reply (signed in; rate limited)
+- DELETE /comments/:id                     your own (staff: any); its karma is taken back
+- POST /apps/:slug/reviews {rating, body}  rate + review (30+ chars earns karma)
+- POST /apps/:slug/share {network}         a share click: x|bluesky|linkedin|reddit|hn|mastodon|copy
+- GET  /karma                              mine: total, week, rank, badges, credits, next free Featured week, history
+- GET  /leaderboard?board=karma&period=week|month|all&limit=   public board (falls back to all time when a week is empty)
 - GET  /categories, GET /plans, GET /publishers?q=&filter=all|claimed|imported|verified&sort=apps|name|new, GET /publishers/:slug
 - GET  /me                                 your plan, usage, orgs and publishers
 - POST /publishers {name, slug?, org?}
@@ -627,6 +658,7 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 - POST /inspect {url}                      grade any URL's installability
 - POST /orgs, /orgs/:org/invites, /orgs/:org/teams, /orgs/:org/projects   (Unlimited)
 - POST /billing/checkout {plan: pro|unlimited}
+- POST /apps/:slug/feature {credit: true}  spend a karma credit: a free Featured week, no payment
 - POST /apps/:slug/feature                 $19 CoinPay checkout: 7 days featured + the next newsletter issue + a free CrawlProof ad
 - GET  /network                            store counts + 30-day CrawlProof network reach (what featuring buys)
 - GET  /apps/:slug/featured                featured state, owed newsletter slot
@@ -638,6 +670,13 @@ Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one 
 ## Get featured
 $19, paid once in any major coin or PayPal: ${config.siteUrl}/featured. Includes a free ad across the CrawlProof network
 for the same week; reach: ${config.siteUrl}/advertise. Newsletter: ${config.siteUrl}/newsletter
+
+## Karma (${config.siteUrl}/leaderboard)
+Signed-in members earn karma; anonymous actions work and earn nothing. Same points as built.indie:
+${karma.howToEarn().map((r) => `- +${r.points} ${r.label}: ${r.rule}`).join('\n')}
+Self-dealing (your own org's apps) and staff accounts earn nothing. Every ${karma.perCredit()} karma grants a free
+Featured week credit: POST /api/v1/apps/:slug/feature {"credit": true}. Board JSON: ${config.siteUrl}/leaderboard/karma.json?period=week,
+RSS: ${config.siteUrl}/leaderboard/karma.xml, a member card: ${config.siteUrl}/leaderboard/u/<player>.
 
 ## Surfaces: PWA, CLI, API, MCP, Desktop
 Every listing is a PWA. The store also finds, on the app's own origin: a CLI (a shell
@@ -662,13 +701,14 @@ A homepage that links back earns the listing the ✓ and a followed link (re-che
 ## MCP
 - Hosted: POST ${config.siteUrl}/mcp (JSON-RPC, streamable HTTP)
 - stdio: npx -y @profullstack/pwamart-mcp   (PWAMART_API_KEY for publishing tools)
-Tools: search_apps (surface=cli|api|mcp|desktop), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app, get_badge, check_badge
+Tools: search_apps (surface=cli|api|mcp|desktop, sort=votes), get_app, list_categories, list_collections, get_collection, install_app, submit_app, verify_app, publish_app, get_badge, check_badge, feature_app (credit=true), upvote_app, review_app, comment, list_comments, my_karma, leaderboard
 
 ## CLI + TUI
 - curl -fsSL ${config.siteUrl}/install.sh | sh    (or npm i -g @profullstack/pwamart)
 - pwamart search <q> [--surface cli|api|mcp|desktop] | info <slug> | install <slug> | tui | submit <url> | verify <slug> | publish <slug>
 - pwamart collections [slug]   agentic workflow collections and their one-command installs
 - pwamart badge <slug> [--check] [--light] | pwamart badge --site <homepage>   badge snippets, backlink check
+- pwamart karma | leaderboard [--period week|month|all] | vote <slug> [--remove] | review <slug> --rating 5 --text "…" | comment <slug> "text" [--reply id] | comments <slug> | feature <slug> --credit
 - pwamart login (OAuth 2.1, browser; --manual over SSH) | logout | whoami | upgrade | uninstall
 - curl -fsSL ${config.siteUrl}/upgrade.sh | sh ; curl -fsSL ${config.siteUrl}/uninstall.sh | sh
 

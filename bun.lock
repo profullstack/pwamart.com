@@ -11,6 +11,7 @@
       "dependencies": {
         "@anthropic-ai/sdk": "^0.131.0",
         "@profullstack/auth-system": "^0.7.1",
+        "@profullstack/leaderboard": "^0.3.1",
         "@profullstack/notifications": "^0.1.4",
         "@profullstack/pwamart-mcp": "workspace:*",
         "@profullstack/stack": "^0.4.0",
@@ -101,6 +102,8 @@
     "@profullstack/hqtui": ["@profullstack/hqtui@0.8.0", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-7dLq4Tb/GO7PyUaSRDf86K0AjeD55aBYW2Y7Mb2CM8YEAANno79ey0o9Dzr7QiGz/smJByah+gGp5UdAdDVGrA=="],
 
     "@profullstack/keys": ["@profullstack/keys@0.1.0", "", {}, "sha512-Vys47LvS5ivhdZu4SYOxh9Le3DEmWhjP0+CtrU45RhXAbY0ZFG/2Dk9V1bIIUGDp8UWMJqctvUD21JrNjfh04w=="],
+
+    "@profullstack/leaderboard": ["@profullstack/leaderboard@0.3.1", "", {}, "sha512-LbxLwy+RvT/Qez0mfWCk4o9hvcq0kzwBZ0vF+CYp+oGvyqJWUaSTLhCHWGtKKAI3c0ZUXj6ll0iuRjbuZUE2Sg=="],
 
     "@profullstack/notifications": ["@profullstack/notifications@0.1.4", "", {}, "sha512-4RSq9C4ghgf/W1YGK6Ai9oMJWWLW2WOSn8cl/J7tbdK/c8nhIr3z3BjQcYJyjGGIMdRuUBGVBAJmp3uAtY28+A=="],
 

@@ -23,9 +23,10 @@ const BATCH = 50;
  * Returns null to decline (wrong amount, app gone), `{already: true}` on a replay.
  * A second purchase for an app that is still featured extends it from its end.
  */
-export async function grantFeatured(tx, { meta, payment }) {
+export async function grantFeatured(tx, { meta, payment, credit = false }) {
   if (!meta.user_id || !meta.app_id || !payment) return null;
-  if (payment.amount_cents < FEATURED.priceCents) return null;
+  // A karma credit (karma.js spendCredit) is a zero-amount payment of our own making.
+  if (!credit && payment.amount_cents < FEATURED.priceCents) return null;
   const [app] = await tx`select id, featured, featured_until from apps where id = ${meta.app_id} and status = 'published'`;
   if (!app) return null;
   // A staff pick (featured, no end date) stays a staff pick; the payment still buys
@@ -100,7 +101,7 @@ export async function syncFeaturedAds({ sql = db(), ads, siteUrl = config.siteUr
 /** What one app's featured state looks like to its owner. */
 export async function featuredState(appId) {
   const [app] = await db()`select featured, featured_until from apps where id = ${appId}`;
-  const slots = await db()`select s.starts_at, s.ends_at, s.issue_id, i.sent_at as issue_sent_at, s.ad_status, s.ad_campaign_ref
+  const slots = await db()`select s.starts_at, s.ends_at, s.issue_id, i.sent_at as issue_sent_at, s.ad_status, s.ad_campaign_ref, s.paid_with
                            from featured_slots s left join newsletter_issues i on i.id = s.issue_id
                            where s.app_id = ${appId} order by s.created_at desc limit 10`;
   return {
