@@ -22,6 +22,7 @@ import { CommentError, addComment, commentsFor, deleteComment, payReview, share 
 import { mountProfileRoutes, validateProfile } from '@profullstack/profile';
 import { profiles } from './user-profile.js';
 import * as credits from './credits.js';
+import { COINPAY_EMAIL_DOMAIN } from './coinpay-signin.js';
 
 /**
  * /api/v1: the only thing any client talks to. The store pages, the publisher
@@ -95,7 +96,10 @@ export async function currentUser(c) {
     : /^Bearer\s+pm_at_/i.test(bearer)
       ? await (await import('./oauth.js')).userFromAccessToken(bearer)
       : await auth.userFromApiKey(bearer);
-  if (user && !user.is_admin && config.adminEmails.includes(user.email.toLowerCase())) {
+  // Staff by address only when the address was proved here (magic link). A CoinPay
+  // account carries a placeholder address, so CoinPay's unverified email never counts.
+  const address = user?.email?.toLowerCase() ?? '';
+  if (user && !user.is_admin && !address.endsWith(`@${COINPAY_EMAIL_DOMAIN}`) && config.adminEmails.includes(address)) {
     await db()`update users set is_admin = true where id = ${user.id}`;
     user.is_admin = true;
   }
