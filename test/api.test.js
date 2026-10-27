@@ -761,7 +761,8 @@ d('Sign in with CoinPay', () => {
     const session = cookieFrom(res, 'pm_session');
     expect(session).toBeTruthy();
     const me = await app.request('/api/v1/me', { headers: { cookie: session } });
-    expect((await me.json()).user).toMatchObject({ email: 'jack@example.test', coinpay: true });
+    // CoinPay's email is unverified, so it never becomes the account's address.
+    expect((await me.json()).user).toMatchObject({ email: 'didkeyzjack@coinpay.pwamart.com', coinpay: true });
     const again = await roundTrip();
     const [{ n }] = await db()`select count(*)::int as n from users where coinpay_sub = 'did:key:zJack'`;
     expect(n).toBe(1);
@@ -775,6 +776,30 @@ d('Sign in with CoinPay', () => {
     expect(cookieFrom(res, 'pm_session')).toBeFalsy();
     const [{ coinpay_sub }] = await db()`select coinpay_sub from users where email = 'alice@example.test'`;
     expect(coinpay_sub).toBeNull();
+  });
+
+  test('a CoinPay email on ADMIN_EMAILS grants nothing and takes no invite or address', async () => {
+    const before = process.env.ADMIN_EMAILS;
+    process.env.ADMIN_EMAILS = `${before},boss@example.test`;
+    try {
+      claims = { sub: 'did:key:zBoss', email: 'boss@example.test', name: 'Not the boss' };
+      const res = await roundTrip();
+      const session = cookieFrom(res, 'pm_session');
+      expect(session).toBeTruthy();
+      const me = await (await app.request('/api/v1/me', { headers: { cookie: session } })).json();
+      expect(me.user.admin).toBe(false);
+      expect(me.user.email).not.toBe('boss@example.test');
+      const [{ is_admin, email }] = await db()`select is_admin, email from users where coinpay_sub = 'did:key:zBoss'`;
+      expect(is_admin).toBe(false);
+      expect(email.endsWith('@coinpay.pwamart.com')).toBe(true);
+      // The real owner signing in by email later gets their own account, not this one.
+      const link = await auth.createLoginLink('boss@example.test');
+      const real = await auth.consumeLoginLink(new URL(link).searchParams.get('t'));
+      const [{ coinpay_sub }] = await db()`select coinpay_sub from users where id = ${real.user.id}`;
+      expect(coinpay_sub).toBeNull();
+    } finally {
+      process.env.ADMIN_EMAILS = before;
+    }
   });
 
   test('a signed-in user connects CoinPay; a forged state is refused', async () => {

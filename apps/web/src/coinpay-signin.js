@@ -18,9 +18,17 @@ import { INVITE_COOKIE, REF_COOKIE, welcomeNewAccount } from './credits.js';
  *
  * Linking is by `sub` (the CoinPay DID) only, never by email: CoinPay does not
  * verify emails. So: a returning sub signs in; a signed-in user who connects gets
- * the sub attached; a new email gets a new account; an email that already belongs
- * to an account is NOT taken over: that person signs in by email and connects.
+ * the sub attached; an email that already belongs to an account is NOT taken over:
+ * that person signs in by email and connects.
+ *
+ * A new CoinPay account never gets CoinPay's email as its own address: users.email
+ * is what magic links, ADMIN_EMAILS and org invites trust, so it holds only an
+ * address this site proved. The account gets <sub>@coinpay.pwamart.com instead.
  */
+
+/** The address a CoinPay-created account carries: never a real, unproven one. */
+export const COINPAY_EMAIL_DOMAIN = 'coinpay.pwamart.com';
+export const placeholderEmail = (sub) => `${String(sub).replace(/[^a-z0-9]/gi, '').slice(-24).toLowerCase()}@${COINPAY_EMAIL_DOMAIN}`;
 
 const COOKIE = 'pm_cp';
 const SCOPES = 'openid profile email did';
@@ -98,7 +106,7 @@ export function mountCoinPaySignin(app) {
       }
       [user] = await sql`
         insert into users (email, name, coinpay_sub)
-        values (${email || `${claims.sub.replace(/[^a-z0-9]/gi, '').slice(-24)}@coinpay.pwamart.com`}, ${claims.name ?? null}, ${claims.sub})
+        values (${placeholderEmail(claims.sub)}, ${claims.name ?? null}, ${claims.sub})
         returning *`;
       await auth.linkPeople(user);
       // A new account: CoinPay vouched for it, so it takes the invite and ?ref= this browser carried.
