@@ -329,9 +329,105 @@ async function submit() {
 
 /* ------------------------------------------------------------ app detail -- */
 
+function publishBlockers(app) {
+  const blockers = [];
+  if (!app.verified) {
+    blockers.push({
+      id: 'verification',
+      title: `Ownership of ${app.origin} is not verified`,
+    });
+  }
+
+  if (app.installable === false) {
+    const failedChecks = (app.checks ?? []).filter(
+      (check) => check.level === 'required' && !check.ok,
+    );
+    blockers.push({
+      id: 'installability',
+      title: 'The app is failing required installability checks',
+      checks: failedChecks,
+    });
+  }
+  return blockers;
+}
+
+function publishHelpMarkdown(app, verify, blockers) {
+  const lines = [
+    `# Why ${app.name} cannot be published yet`,
+    '',
+    `- App: ${app.url}`,
+    `- Origin: ${app.origin}`,
+    `- Current status: ${app.status}`,
+    `- Installability score: ${app.score ?? 'unknown'}%`,
+    '',
+    '## Problem',
+    '',
+    'The Publish to the store button is disabled because these requirements are not met:',
+    ...blockers.map((blocker) => `- ${blocker.title}`),
+    '',
+    '## Solution',
+    '',
+  ];
+
+  let step = 1;
+  const ownership = blockers.find((blocker) => blocker.id === 'verification');
+  if (ownership) {
+    lines.push(`${step++}. Prove that you control ${app.origin}. Choose one proof method:`);
+    if (verify.options?.length) {
+      lines.push(...verify.options.map((option) => `   - **${option.method}:** ${option.how}`));
+    } else if (verify.note) {
+      lines.push(`   - ${verify.note}`);
+    }
+    lines.push('   Then return to this page and click **Verify**.');
+    lines.push('');
+  }
+
+  const installability = blockers.find((blocker) => blocker.id === 'installability');
+  if (installability) {
+    lines.push(`${step++}. Fix the required installability checks on the app, then click **Re-check manifest**:`);
+    if (installability.checks.length) {
+      lines.push(...installability.checks.map((check) => `   - **${check.label}:** ${check.hint || 'This required check is failing.'}`));
+    } else {
+      lines.push('   - The saved report says the app is not installable, but has no failed required checks. Re-check the manifest to refresh the report.');
+    }
+    lines.push('');
+  }
+
+  lines.push('When ownership is verified and all required checks pass, the publish button will be enabled. Click **Publish to the store** to submit the listing.');
+  if (verify.note) {
+    lines.push('', `> Verification note: ${verify.note}`);
+  }
+  return lines.join('\n');
+}
+
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // Fall through to the selection-based copy for browsers with clipboard
+    // access disabled by permissions.
+  }
+
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.setAttribute('readonly', '');
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.append(input);
+  input.select();
+  const copied = document.execCommand('copy');
+  input.remove();
+  if (!copied) throw new Error('Clipboard access is unavailable');
+}
+
 async function appDetail(slug, note = '') {
   const { app, verify } = await api(`/apps/${encodeURIComponent(slug)}/manage`);
   const step = !app.verified ? 2 : app.status !== 'published' ? 3 : null;
+  const blockers = publishBlockers(app);
+  const publishReady = blockers.length === 0;
   view.innerHTML = `
     <div class="page-head"><div class="row">${app.icon ? `<img class="icon" src="${esc(app.icon)}" width="64" height="64" alt="" referrerpolicy="no-referrer">` : ''}
       <div>${step ? `<div class="eyebrow">Step ${step} of 3</div>` : `<div class="eyebrow">Live</div>`}<h1>${esc(app.name)}</h1></div></div>
@@ -352,10 +448,17 @@ async function appDetail(slug, note = '') {
     </div>
 
     <div class="row" style="margin-bottom:22px">
-      ${app.status !== 'published' ? `<button class="btn primary" id="publish" ${app.verified && app.installable !== false ? '' : 'disabled'}>Publish to the store</button>` : '<button class="btn" id="unlist">Unlist</button><button class="btn" id="unpublish">Back to draft</button>'}
+      ${app.status !== 'published' ? `<button class="btn primary" id="publish" ${publishReady ? '' : 'disabled aria-describedby="publish-reason"'}>${publishReady ? 'Publish to the store' : 'Publish blocked'}</button>` : '<button class="btn" id="unlist">Unlist</button><button class="btn" id="unpublish">Back to draft</button>'}
       ${me.user.admin ? `<button class="btn" id="feature">${app.featured ? 'Unfeature' : 'Feature'} (staff)</button>${app.verified ? '' : '<button class="btn" id="staffverify">Verify (staff)</button>'}` : ''}
       <span id="pmsg"></span>
     </div>
+    ${app.status !== 'published' && blockers.length ? `<section class="panel publish-blocked" id="publish-reason" role="status" aria-live="polite">
+      <div class="row" style="justify-content:space-between"><h3>You can’t submit this app yet</h3><button class="btn sm" type="button" id="copy-publish-markdown">Copy as Markdown</button></div>
+      <p>The publish button is disabled until you clear these blockers:</p>
+      <ul>${blockers.map((blocker) => `<li><b>${esc(blocker.title)}</b>${blocker.checks?.length ? `<ul>${blocker.checks.map((check) => `<li>${esc(check.label)}: ${esc(check.hint || 'This required check is failing.')}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>
+      <p class="muted">Follow the verification instructions above and fix the failed checks, then verify and re-check the manifest. The publish button will enable when the requirements pass.</p>
+      <span id="publish-copy-status" class="muted" aria-live="polite"></span>
+    </section>` : ''}
 
     ${app.status === 'published' ? '<div class="panel" id="featured-panel" style="margin-bottom:22px"><p class="muted">Loading…</p></div>' : ''}
 
@@ -383,6 +486,17 @@ async function appDetail(slug, note = '') {
 
   const act = (id, fn) => $(id)?.addEventListener('click', fn);
   const msg = (id, html) => ($(id).innerHTML = html);
+  act('#copy-publish-markdown', async () => {
+    const button = $('#copy-publish-markdown');
+    try {
+      await copyText(publishHelpMarkdown(app, verify, blockers));
+      button.textContent = 'Copied';
+      msg('#publish-copy-status', 'Instructions copied as Markdown.');
+      setTimeout(() => (button.textContent = 'Copy as Markdown'), 1400);
+    } catch {
+      msg('#publish-copy-status', 'Could not access the clipboard. Check browser clipboard permissions and try again.');
+    }
+  });
   const showBadge = (b) => {
     const box = $('#badge-snips');
     if (!box) return;

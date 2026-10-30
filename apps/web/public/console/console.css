@@ -13,6 +13,11 @@
 }
 .page-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .page-head h1 { font-size: clamp(30px, 4vw, 44px); }
+.publish-blocked { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 6%, var(--card)); margin-bottom: 22px; }
+.publish-blocked h3 { margin: 0; color: var(--orange-ink); }
+.publish-blocked > p { margin: 10px 0; }
+.publish-blocked ul { margin: 7px 0; padding-left: 22px; }
+.publish-blocked li { margin: 5px 0; }
 form.stack { display: grid; gap: 14px; max-width: 620px; }
 label.f { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
 label.f small { font-weight: 400; color: var(--muted); }
