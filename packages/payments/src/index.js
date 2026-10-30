@@ -152,7 +152,7 @@ function safeEqualHex(a, b) {
  * @param {string} [args.successUrl]  may contain {CHECKOUT_SESSION_ID}
  * @param {string} [args.cancelUrl]
  * @param {number} [args.expiresInMinutes]  15-120, default 60
- * @returns {Promise<{checkoutUrl: string, paymentRef: string, sessionId: string}>}
+ * @returns {Promise<{checkoutUrl: string, paymentRef: string, sessionId: string|null}>}
  */
 export async function createCheckout({
   user = null,
@@ -209,18 +209,69 @@ export async function createCheckout({
     signal: AbortSignal.timeout(20_000),
   });
 
-  if (!res.ok) throw new Error(`coinpay ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const body = await res.json();
-  const sessionId = body?.id;
-  if (!sessionId || !String(sessionId).startsWith('cs_')) {
-    throw new Error('coinpay returned no checkout session');
+  let body;
+  let paymentRef;
+  let sessionId;
+  let checkoutUrl;
+
+  if (res.status === 404) {
+    // The deployed CoinPay API still exposes payments/create, not checkout/sessions.
+    // Keep the session path for deployments that add it, but fall back to the
+    // supported hosted payment page so purchases do not fail with CoinPay's HTML 404.
+    const paymentResponse = await fetch(`${base}/api/payments/create`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${coinpay.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        business_id: coinpay.businessId,
+        amount: amountCents / 100,
+        currency,
+        blockchain: String(coinpay.defaultChain || 'USDC_POL').toUpperCase(),
+        payment_method: 'crypto',
+        description,
+        metadata: { ...meta, ...(userId === null ? {} : { user_id: String(userId) }) },
+        redirect_url: successUrl,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        expires_in_minutes: Math.min(120, Math.max(15, Math.round(expiresInMinutes))),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!paymentResponse.ok) {
+      const detail = await paymentResponse.text();
+      throw new Error(`coinpay payments/create ${paymentResponse.status}: ${detail.slice(0, 300)}`);
+    }
+
+    body = await paymentResponse.json();
+    const payment = body?.payment ?? body;
+    paymentRef = payment?.id ?? payment?.payment_id;
+    if (!paymentRef) throw new Error('coinpay returned no payment reference');
+    checkoutUrl = payment?.stripe_checkout_url ?? `${base}/pay/${encodeURIComponent(paymentRef)}`;
+  } else {
+    if (!res.ok) throw new Error(`coinpay checkout session ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    body = await res.json();
+    sessionId = body?.id;
+    if (!sessionId || !String(sessionId).startsWith('cs_')) {
+      throw new Error('coinpay returned no checkout session');
+    }
+    paymentRef = sessionId;
+    checkoutUrl = `${base}/checkout/${encodeURIComponent(sessionId)}`;
+    try {
+      const candidate = new URL(String(body.url), base);
+      if (candidate.origin === new URL(base).origin) checkoutUrl = candidate.toString();
+    } catch {
+      // Keep the checkout URL built from CoinPay's own origin.
+    }
   }
 
   await sql`
     insert into payments ${sql({
       user_id: userId,
       provider: 'coinpay',
-      provider_ref: sessionId,
+      provider_ref: paymentRef,
       amount_cents: amountCents,
       currency,
       status: 'pending',
@@ -234,14 +285,7 @@ export async function createCheckout({
    * but a redirect is the one thing here an attacker would want to steer, so it is
    * rebuilt from our own config when it points anywhere else.
    */
-  let checkoutUrl = `${base}/checkout/${encodeURIComponent(sessionId)}`;
-  try {
-    const u = new URL(String(body.url), base);
-    if (u.origin === new URL(base).origin) checkoutUrl = u.toString();
-  } catch {
-    // keep the one built from config
-  }
-  return { checkoutUrl, paymentRef: sessionId, sessionId };
+  return { checkoutUrl, paymentRef, sessionId: sessionId ?? null };
 }
 
 /**
