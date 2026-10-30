@@ -844,7 +844,7 @@ export function developersPage({ stats }) {
     <p>Required to publish: HTTPS, a linked manifest with <code>name</code>, 192 and 512px icons, <code>display: standalone</code> and a same-origin <code>start_url</code>. A service worker, a maskable icon, screenshots and an <code>id</code> are recommended and shown on your page.</p>
   </section>
   <section class="block" id="verify"><h2>2 · Verify the domain</h2>
-    <p>Any one of these, with the token from your app's page in the console:</p>
+    <p>Use the site-specific PwaMart footer badge, or any one of these token methods from your app's page in the console:</p>
     <ul>
       <li><code>"pwamart": { "verification": "TOKEN" }</code> in your web app manifest</li>
       <li><code>https://your.app/.well-known/pwamart.txt</code> containing the token</li>

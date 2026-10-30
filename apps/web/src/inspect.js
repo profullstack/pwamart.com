@@ -379,11 +379,28 @@ export function manifestToken(manifest) {
   return typeof v === 'string' ? v.trim() : null;
 }
 
+/** A site-specific footer badge is an ownership proof when it names this origin. */
+export function hasPwamartBadge(html, origin) {
+  const expected = new URL(origin);
+  for (const match of String(html ?? '').matchAll(/\bhref\s*=\s*(["'])(.*?)\1/gi)) {
+    const raw = match[2].replace(/&amp;/gi, '&');
+    try {
+      const link = new URL(raw, expected);
+      if (link.hostname !== 'pwamart.com' || link.pathname !== '/for') continue;
+      const site = new URL(link.searchParams.get('site') ?? '');
+      if (site.protocol === 'https:' && site.origin === expected.origin && site.pathname === '/') return true;
+    } catch {}
+  }
+  return false;
+}
+
 /**
- * Does the origin carry this token? Four ways, first match wins:
+ * Does the origin prove control? A site-specific badge is accepted alongside
+ * token methods; DNS is last for public origins and never used on shared hosts.
  *   https://<origin>/.well-known/pwamart.txt   containing the token
  *   <meta name="pwamart-verification" content="<token>"> on the submitted page
  *   "pwamart": { "verification": "<token>" }   in the app's web app manifest
+ *   a footer link to https://pwamart.com/for?site=https://<origin>/
  *   DNS TXT  _pwamart.<host>  =  pwamart-verification=<token>
  *
  * DNS is never asked on a shared host (you.vercel.app): its owner cannot write
@@ -402,6 +419,7 @@ export async function verifyOrigin({ origin, url, token, txt = resolveTxt }) {
       const m = await safeFetch(head.manifest, { accept: 'application/manifest+json,application/json', maxBytes: 512 * 1024 });
       if (m.status < 400 && manifestToken(JSON.parse(m.text.replace(/^﻿/, ''))) === token) return 'manifest';
     }
+    if (p.status < 400 && hasPwamartBadge(p.text, origin)) return 'badge';
   } catch {}
   const host = new URL(origin).hostname;
   if (sharedHost(host)) return null;

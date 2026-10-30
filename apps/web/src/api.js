@@ -763,6 +763,7 @@ export function verifyHelp(row) {
   const host = new URL(row.origin).hostname;
   const shared = sharedHost(host);
   const options = [
+    { method: 'badge', how: `Keep the footer badge linking to https://pwamart.com/for?site=${row.origin}/` },
     { method: 'manifest', how: `Add to your web app manifest: "pwamart": { "verification": "${row.verify_token}" }` },
     { method: 'well-known', how: `Serve ${row.origin}/.well-known/pwamart.txt containing: ${row.verify_token}` },
     { method: 'meta', how: `Add to the page head: <meta name="pwamart-verification" content="${row.verify_token}">` },
@@ -772,7 +773,7 @@ export function verifyHelp(row) {
     token: row.verify_token,
     verified: Boolean(row.verified_at ?? row.verified),
     options,
-    ...(shared && { note: `${host} is on ${shared}, whose DNS belongs to the platform, so prove it with the manifest, file or meta tag.` }),
+    ...(shared && { note: `${host} is on ${shared}, whose DNS belongs to the platform, so prove it with the footer badge, manifest, file or meta tag.` }),
   };
 }
 
