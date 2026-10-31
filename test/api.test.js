@@ -355,11 +355,9 @@ d('store end to end', () => {
     expect((await app.request('/apps/nope-nope/badge.svg')).status).toBe(404);
 
     const square = await app.request('/apps/notes/icon-badge.svg');
-    expect(square.status).toBe(200);
-    expect(square.headers.get('content-type')).toContain('image/svg+xml');
-    const squareSvg = await square.text();
-    expect(squareSvg).toContain('aria-label="pwamart"');
-    expect(squareSvg).toBe(await (await app.request('/icon.svg')).text());
+    expect(square.status).toBe(302);
+    expect(square.headers.get('location')).toBe('https://logicsrc.com/openicon/set/hq/svg/pwamart.svg');
+    expect(square.headers.get('cache-control')).toContain('max-age=86400');
     expect((await app.request('/apps/nope-nope/icon-badge.svg')).status).toBe(404);
 
     const site = encodeURIComponent(`${base}/`);

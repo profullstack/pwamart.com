@@ -12,7 +12,7 @@
         "@anthropic-ai/sdk": "^1.3.0",
         "@profullstack/affiliates": "0.3.0",
         "@profullstack/auth-system": "^0.8.3",
-        "@profullstack/footer": "^0.6.8",
+        "@profullstack/footer": "^0.6.11",
         "@profullstack/leaderboard": "^0.3.1",
         "@profullstack/notifications": "^0.1.4",
         "@profullstack/profile": "0.1.6",
@@ -110,7 +110,7 @@
 
     "@profullstack/emailer": ["@profullstack/emailer@1.0.3", "", {}, "sha512-VyAtCcfnSI6LOwJvWogCr3ZNmEsaZw+iuWrqnosLsdcKsbRyCrCmXigMNZJZEjlgYlR+lK//PwNPG+xtCFvWAw=="],
 
-    "@profullstack/footer": ["@profullstack/footer@0.6.8", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"], "bin": { "profullstack-footer": "bin/profullstack-footer.js" } }, "sha512-BI7Va5D+6yBEy3NWJ+4s478bk7Ok6koo3/DqzPp1mDLBNjMmTRAikoiqwhpCuhe2iCVmCDt0mM01ZxAu4UddvA=="],
+    "@profullstack/footer": ["@profullstack/footer@0.6.11", "", { "peerDependencies": { "react": ">=18" }, "optionalPeers": ["react"], "bin": { "profullstack-footer": "bin/profullstack-footer.js" } }, "sha512-9khfQbBM2p5cqMqUg8+K1atF2muYWA0AQaVI6C8gH6Cl+D+7Wc2zeaPmtDMque8HZzA3tdaqoCAAUfsufaL17Q=="],
 
     "@profullstack/form-guard": ["@profullstack/form-guard@0.1.1", "", {}, "sha512-RGLGfQhjq40f+JqEhSmsJnS0I5sFWjYdrYx4VYtkUqz8xvioN2yyR+6uFK0mnDAStKrYytlngg3meUsrChm/OQ=="],
 

@@ -19,7 +19,7 @@ import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, i
 import { surfaceKey } from './surfaces.js';
 import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
-import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, theme as badgeTheme } from './badge.js';
+import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, PWAMART_OPENICON_URL, theme as badgeTheme } from './badge.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 import * as karma from './karma.js';
@@ -553,7 +553,8 @@ app.get('/apps/:slug/badge.svg', async (c) => {
 app.get('/apps/:slug/icon-badge.svg', async (c) => {
   const row = configured() ? await appBadgeRow(c.req.param('slug')).catch(() => null) : null;
   if (!row) return c.text('no such app', 404);
-  return c.body(pub('icon.svg'), 200, SVG_HEADERS(86400));
+  c.header('Cache-Control', 'public, max-age=86400');
+  return c.redirect(PWAMART_OPENICON_URL, 302);
 });
 app.get('/publish', (c) => c.redirect('/console/submit', 302));
 app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript' }));
