@@ -1309,3 +1309,59 @@ export function leaderboardPage({ board, period, fallback, earn, perCredit, stat
 </div>`;
   return layout({ title: 'Karma leaderboard', description: 'Who is upvoting, reviewing, commenting on and sharing the most web apps on pwamart this week.', path: '/leaderboard', body, stats });
 }
+
+/** Public member profile, kept inside the same store shell as the leaderboard. */
+export function leaderboardProfilePage({ profile, stats }) {
+  const total = Number(profile.totals?.karma ?? 0);
+  const fmt = (value) => Math.max(0, Number(value) || 0).toLocaleString('en-US');
+  const periods = [
+    ['week', 'This week'],
+    ['month', 'This month'],
+    ['all', 'All time'],
+  ];
+  const bestRank = Math.min(...periods.map(([period]) => profile.ranks?.karma?.[period] ?? Infinity));
+  const headline = Number.isFinite(bestRank) ? `#${bestRank} on pwamart` : `${profile.name} on pwamart`;
+  const description = `${profile.name}: ${fmt(total)} karma, a ${fmt(profile.streak)} day streak and ${profile.badges.length} badge${profile.badges.length === 1 ? '' : 's'}.`;
+  const badges = profile.badges.length
+    ? profile.badges.map((badge) => `<li class="profile-badge"><span class="profile-badge-emoji" aria-hidden="true">${e(badge.emoji)}</span><span><b>${e(badge.label)}</b><small>${e(badge.describe)}</small></span></li>`).join('')
+    : '<li class="muted">No badges yet. Keep contributing to earn the first one.</li>';
+  const standings = periods.map(([period, label]) => {
+    const rank = profile.ranks?.karma?.[period];
+    const value = profile.values?.karma?.[period] ?? 0;
+    return `<li class="profile-rank"><span>${label}</span><b>${rank ? `#${fmt(rank)}` : '—'}</b><small>${fmt(value)} karma</small></li>`;
+  }).join('');
+  const head = `<meta property="og:type" content="profile">
+<meta name="twitter:title" content="${e(`${profile.name}: ${headline}`)}">
+<meta name="twitter:description" content="${e(description)}">
+<link rel="alternate" type="application/json" href="/leaderboard/u/${e(encodeURIComponent(profile.id))}.json">`;
+  const body = `<div class="wrap" style="max-width:860px">
+  <section class="block" style="padding-top:44px">
+    <div class="eyebrow">Karma · member profile</div>
+    <h1 style="font-size:clamp(36px,5.4vw,60px);margin:10px 0 8px">${e(profile.name)}</h1>
+    <p class="lede" style="margin:0">${e(headline)} · ${fmt(total)} karma earned in the pwamart community.</p>
+    <div class="stats profile-stats">
+      <div><b>${fmt(total)}</b><span>Total karma</span></div>
+      <div><b>${fmt(profile.values?.karma?.week ?? 0)}</b><span>This week</span></div>
+      <div><b>${fmt(profile.streak)}</b><span>Day streak</span></div>
+      <div><b>${fmt(profile.badges.length)}</b><span>Badges</span></div>
+    </div>
+    <div class="hero-actions" style="margin-top:18px"><a class="btn dark" href="/leaderboard">Karma leaderboard</a><a class="btn" href="/leaderboard#earn">How to earn karma</a><a class="btn" href="/leaderboard/u/${e(encodeURIComponent(profile.id))}.json">Profile JSON</a></div>
+  </section>
+  <section class="block" style="padding-top:8px">
+    <div class="block-head"><h2>Leaderboard standing</h2><a href="/leaderboard">See the full board →</a></div>
+    <div class="panel"><ol class="profile-ranks">${standings}</ol></div>
+  </section>
+  <section class="block" style="padding-top:8px">
+    <div class="block-head"><h2>Badges</h2><span class="muted">${fmt(profile.badges.length)} earned</span></div>
+    <div class="panel"><ul class="profile-badges">${badges}</ul></div>
+  </section>
+</div>`;
+  return layout({
+    title: `${profile.name}: ${headline}`,
+    description,
+    path: `/leaderboard/u/${encodeURIComponent(profile.id)}`,
+    body,
+    stats,
+    head,
+  });
+}

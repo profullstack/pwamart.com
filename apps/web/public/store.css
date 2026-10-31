@@ -417,3 +417,22 @@ pre.code { margin: 6px 0 0; padding: 12px 14px; border-radius: 12px; background:
 .karma-table th { text-align: left; font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--paper-2); }
 .karma-table td { padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .karma-table tr:last-child td { border-bottom: 0; }
+.profile-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.profile-stats div { min-width: 108px; }
+.profile-ranks, .profile-badges { list-style: none; margin: 0; padding: 0; }
+.profile-rank { display: grid; grid-template-columns: 1fr auto auto; gap: 18px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.profile-rank:first-child { border-top: 0; }
+.profile-rank b { font: 600 18px var(--serif); font-variant-numeric: tabular-nums; }
+.profile-rank small, .profile-badge small { color: var(--muted); font-size: 12.5px; }
+.profile-badge { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.profile-badge:first-child { border-top: 0; }
+.profile-badge > span:last-child { display: grid; gap: 2px; }
+.profile-badge-emoji { width: 34px; text-align: center; font-size: 23px; }
+@media (max-width: 520px) {
+  .profile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .profile-stats div { min-width: 0; }
+  .profile-stats div:nth-child(odd) { border-left: 0; }
+  .profile-stats div:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .profile-rank { grid-template-columns: 1fr auto; gap: 8px; }
+  .profile-rank small { grid-column: 1 / -1; }
+}
