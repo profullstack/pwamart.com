@@ -226,12 +226,20 @@ describe('tui', () => {
 });
 
 describe('footer', () => {
-  test('server-renders the Profullstack webring row in the store footer', () => {
+  test('renders PwaMart through the shared Profullstack footer template', () => {
     const html = layout({ title: 't', description: 'd', body: '' });
-    const foot = html.slice(html.indexOf('<footer class="foot">'));
-    expect(foot).toContain('class="webring"');
+    const foot = html.slice(html.indexOf('<footer class="pfs-footer"'));
+    expect(html.match(/<footer\b/g)?.length).toBe(1);
+    expect(foot).toContain('data-pfs-footer=');
+    expect(foot).toContain('Profullstack, Inc.');
+    expect(foot).toContain('https://profullstack.com/assets/logo.svg');
+    expect(foot).toContain('https://discord.gg/U7dEXfBA3s');
+    expect(foot).toContain('https://x.com/profullstackinc');
+    expect(foot).toContain('https://github.com/profullstack');
     expect(foot).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F');
     expect(foot).toContain('https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F');
+    expect(foot).toContain('https://pwamart.com/for?site=https://pwamart.com/');
+    expect(foot).toContain('https://built.indie.pit.world/for?site=https://pwamart.com/');
     expect(foot.match(/&copy;/g)?.length).toBe(1);
   });
 });
