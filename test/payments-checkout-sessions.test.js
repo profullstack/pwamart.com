@@ -185,7 +185,7 @@ describe('createCheckout opens a hosted checkout session', () => {
         amountCents: 100,
         description: 'x',
       }),
-    ).rejects.toThrow('coinpay 400');
+    ).rejects.toThrow('coinpay checkout session 400');
   });
 });
 
@@ -295,6 +295,7 @@ describe('the shared file stays copyable', () => {
     const imports = [...src.matchAll(/^import .* from '([^']+)';/gm)].map((m) => m[1]);
     for (const spec of imports) expect(spec.startsWith('node:')).toBe(true);
     expect(src).toContain('/api/checkout/sessions');
-    expect(src).not.toContain('/api/payments/create');
+    expect(src).toContain('/api/payments/create');
+    expect(src).toContain("payment_method: 'crypto'");
   });
 });

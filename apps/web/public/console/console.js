@@ -476,6 +476,8 @@ async function appDetail(slug, note = '') {
         app.status === 'published'
           ? `<p class="muted" style="font-size:13px">A live badge for your site: rating + installs, linking to your listing. When ${esc(app.url)} links back, the listing gets the ✓ and a followed link to your site.</p>
       <p style="display:flex;gap:10px;flex-wrap:wrap"><img src="/apps/${esc(app.slug)}/badge.svg" alt="badge" width="200" height="44"><img src="/apps/${esc(app.slug)}/badge.svg?theme=light" alt="badge, light" width="200" height="44"></p>
+      <p class="muted" style="font-size:13px">Square SVG icon badge</p>
+      <p style="display:flex;gap:10px;flex-wrap:wrap"><img src="/apps/${esc(app.slug)}/icon-badge.svg" alt="square icon badge" width="96" height="96"><img src="/apps/${esc(app.slug)}/icon-badge.svg?theme=light" alt="square icon badge, light" width="96" height="96"></p>
       <div id="badge-snips"><p class="muted">Loading…</p></div>
       <div class="row"><button class="btn sm" id="badgecheck">I added it: check</button><span id="bmsg">${app.badge_verified ? '<span class="ok-msg">✓ Your site links back.</span>' : ''}</span></div>`
           : '<p class="muted" style="font-size:13px">Publish the app to get its live badge.</p>'
@@ -504,6 +506,9 @@ async function appDetail(slug, note = '') {
       ['HTML', b.html],
       ['Markdown', b.markdown],
       ['HTML, light', b.html_light],
+      ['Square SVG HTML', b.square_html],
+      ['Square SVG Markdown', b.square_markdown],
+      ['Square SVG HTML, light', b.square_html_light],
     ]
       .map(([label, v]) => `<p class="muted" style="font-size:12.5px;margin:10px 0 4px">${label} <button class="btn sm" type="button" data-copy="${esc(v)}">Copy</button></p><div class="code-block">${esc(v)}</div>`)
       .join('');
