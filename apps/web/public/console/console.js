@@ -476,9 +476,9 @@ async function appDetail(slug, note = '') {
         app.status === 'published'
           ? `<p class="muted" style="font-size:13px">A live badge for your site: rating + installs, linking to your listing. When ${esc(app.url)} links back, the listing gets the ✓ and a followed link to your site.</p>
       <p style="display:flex;gap:10px;flex-wrap:wrap"><img src="/apps/${esc(app.slug)}/badge.svg" alt="badge" width="200" height="44"><img src="/apps/${esc(app.slug)}/badge.svg?theme=light" alt="badge, light" width="200" height="44"></p>
-      <h3 style="margin:18px 0 6px">Square SVG icon badge</h3><p class="muted" style="font-size:13px;margin:0 0 10px">Use the square app-icon badge in your README or website. Open the SVG or copy a ready-made snippet below.</p>
-      <p style="display:flex;gap:10px;flex-wrap:wrap"><a href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener"><img src="/apps/${esc(app.slug)}/icon-badge.svg" alt="Open square SVG icon badge" width="96" height="96"></a><a href="/apps/${esc(app.slug)}/icon-badge.svg?theme=light" target="_blank" rel="noopener"><img src="/apps/${esc(app.slug)}/icon-badge.svg?theme=light" alt="Open light square SVG icon badge" width="96" height="96"></a></p>
-      <div class="row" style="margin-bottom:12px"><a class="btn sm" href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener">Open square SVG ↗</a><a class="btn sm" href="/apps/${esc(app.slug)}/icon-badge.svg?theme=light" target="_blank" rel="noopener">Open light SVG ↗</a></div>
+      <h3 style="margin:18px 0 6px">Square pwamart icon badge</h3><p class="muted" style="font-size:13px;margin:0 0 10px">Use pwamart’s square brand icon in your README or website. Open the SVG or copy a ready-made snippet below.</p>
+      <p style="display:flex;gap:10px;flex-wrap:wrap"><a href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener"><img src="/apps/${esc(app.slug)}/icon-badge.svg" alt="Open pwamart square icon badge" width="96" height="96"></a></p>
+      <div class="row" style="margin-bottom:12px"><a class="btn sm" href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener">Open square SVG ↗</a></div>
       <div id="badge-snips"><p class="muted">Loading…</p></div>
       <div class="row"><button class="btn sm" id="badgecheck">I added it: check</button><span id="bmsg">${app.badge_verified ? '<span class="ok-msg">✓ Your site links back.</span>' : ''}</span></div>`
           : '<p class="muted" style="font-size:13px">Publish the app to get its live badge.</p>'
@@ -507,12 +507,9 @@ async function appDetail(slug, note = '') {
       ['HTML', b.html],
       ['Markdown', b.markdown],
       ['HTML, light', b.html_light],
-      ['Square SVG URL', b.square_image],
-      ['Square SVG URL, light', b.square_image_light],
-      ['Square SVG HTML', b.square_html],
-      ['Square SVG Markdown', b.square_markdown],
-      ['Square SVG HTML, light', b.square_html_light],
-      ['Square SVG Markdown, light', b.square_markdown_light],
+      ['Square pwamart icon URL', b.square_image],
+      ['Square pwamart icon HTML', b.square_html],
+      ['Square pwamart icon Markdown', b.square_markdown],
     ]
       .map(([label, v]) => `<p class="muted" style="font-size:12.5px;margin:10px 0 4px">${label} <button class="btn sm" type="button" data-copy="${esc(v)}">Copy</button></p><div class="code-block">${esc(v)}</div>`)
       .join('');

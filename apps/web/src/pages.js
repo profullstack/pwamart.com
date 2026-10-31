@@ -208,15 +208,13 @@ export function badgeSection(app) {
       ${row('HTML', s.dark.html)}
       ${row('Markdown (GitHub README)', s.dark.markdown)}
       ${row('HTML, light', s.light.html)}
-      <h3 style="margin:24px 0 8px">Square SVG icon badge</h3>
-      <p class="muted" style="font-size:13px;margin:0 0 10px">A square version of the app icon with a small pwamart mark. The SVG embeds the icon so it displays reliably in READMEs and websites.</p>
+      <h3 style="margin:24px 0 8px">Square pwamart icon badge</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Pwamart’s square brand icon, linking to this listing.</p>
       <p style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 12px">
-        <img src="${e(s.square.image)}" alt="${e(s.alt)} square icon badge" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" loading="lazy">
-        <img src="${e(s.square_light.image)}" alt="${e(s.alt)} square icon badge (light)" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" loading="lazy">
+        <img src="${e(s.square.image)}" alt="pwamart square icon badge" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" loading="lazy">
       </p>
-      ${row('Square SVG HTML', s.square.html)}
-      ${row('Square SVG Markdown (GitHub README)', s.square.markdown)}
-      ${row('Square SVG HTML, light', s.square_light.html)}
+      ${row('Square icon HTML', s.square.html)}
+      ${row('Square icon Markdown (GitHub README)', s.square.markdown)}
     </div>
   </section>`;
 }
@@ -868,7 +866,7 @@ export function developersPage({ stats }) {
     <div class="term"><div>[![Get it on pwamart](${e(site)}/badges/get-it-on-pwamart.svg)](${e(site)}/apps/YOUR-SLUG)</div></div>
     <div class="term" style="margin-top:10px"><div>&lt;a href="${e(site)}/apps/YOUR-SLUG"&gt;&lt;img src="${e(site)}/badges/get-it-on-pwamart.svg" alt="Get it on pwamart" width="135" height="40"&gt;&lt;/a&gt;</div></div>
     <h3 style="margin-top:22px">The live badge (rating + installs) and the ✓</h3>
-    <p><code>${e(site)}/apps/YOUR-SLUG/badge.svg</code> (add <code>?theme=light</code>) shows your rating and installs. <code>${e(site)}/apps/YOUR-SLUG/icon-badge.svg</code> is the square SVG version of the app icon. Or key the wide badge by your homepage, one line for any site: <code>${e(site)}/for.svg?site=https://your.app/</code> linking <code>${e(site)}/for?site=https://your.app/</code>; a site with no listing yet shows "List your PWA free". When your homepage links to your listing (or <code>/for</code>), the listing gets the ✓ and a followed link to your site. We re-check daily.</p>
+    <p><code>${e(site)}/apps/YOUR-SLUG/badge.svg</code> (add <code>?theme=light</code>) shows your rating and installs. <code>${e(site)}/apps/YOUR-SLUG/icon-badge.svg</code> is pwamart’s square brand icon linked to the listing. Or key the wide badge by your homepage, one line for any site: <code>${e(site)}/for.svg?site=https://your.app/</code> linking <code>${e(site)}/for?site=https://your.app/</code>; a site with no listing yet shows "List your PWA free". When your homepage links to your listing (or <code>/for</code>), the listing gets the ✓ and a followed link to your site. We re-check daily.</p>
     <div class="term"><div>&lt;a href="${e(site)}/for?site=https://your.app/"&gt;&lt;img src="${e(site)}/for.svg?site=https://your.app/" alt="Get it on pwamart" width="200" height="44" loading="lazy"&gt;&lt;/a&gt;</div></div>
     <p class="muted" style="margin-top:8px">API: <code>GET /api/v1/apps/YOUR-SLUG/badge</code>, <code>GET /api/v1/badge?site=</code>, <code>POST /api/v1/apps/YOUR-SLUG/badge/check</code>. CLI: <code>pwamart badge YOUR-SLUG [--check]</code>. MCP: <code>get_badge</code>, <code>check_badge</code>.</p>
   </section>
