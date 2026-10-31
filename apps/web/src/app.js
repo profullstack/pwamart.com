@@ -18,7 +18,7 @@ import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, i
 import { surfaceKey } from './surfaces.js';
 import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
-import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, theme as badgeTheme } from './badge.js';
+import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, squareBadgeIconData, squareIconBadgeSvg, theme as badgeTheme } from './badge.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
 import * as karma from './karma.js';
@@ -503,7 +503,7 @@ const SVG_HEADERS = (maxAge) => ({
   'cache-control': `public, max-age=${maxAge}`,
   'access-control-allow-origin': '*',
   'cross-origin-resource-policy': 'cross-origin',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
 });
 // Every page view on every site carrying the footer asks for /for.svg: remember lookups a minute.
 const bySite = new Map();
@@ -529,6 +529,12 @@ app.get('/apps/:slug/badge.svg', async (c) => {
   const row = configured() ? await appBadgeRow(c.req.param('slug')).catch(() => null) : null;
   if (!row) return c.body(listBadgeSvg(badgeTheme(c.req.query('theme'))), 404, SVG_HEADERS(60));
   return c.body(badgeSvg(row, badgeTheme(c.req.query('theme'))), 200, SVG_HEADERS(300));
+});
+app.get('/apps/:slug/icon-badge.svg', async (c) => {
+  const row = configured() ? await appBadgeRow(c.req.param('slug')).catch(() => null) : null;
+  if (!row) return c.body(listBadgeSvg(badgeTheme(c.req.query('theme'))), 404, SVG_HEADERS(60));
+  const icon = await squareBadgeIconData(row);
+  return c.body(squareIconBadgeSvg(row, icon, badgeTheme(c.req.query('theme'))), 200, SVG_HEADERS(300));
 });
 app.get('/publish', (c) => c.redirect('/console/submit', 302));
 app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript' }));

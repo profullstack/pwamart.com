@@ -173,9 +173,9 @@ d('store end to end', () => {
     expect(await inspectMod.verifyOrigin({ origin: base, url: `${base}/mf/`, token: 'some-other-token', txt: noDns })).toBe(null);
     const { verifyHelp } = await import('../apps/web/src/api.js');
     const own = verifyHelp({ origin: 'https://notes.example', verify_token: 't' });
-    expect(own.options.map((o) => o.method)).toEqual(['manifest', 'well-known', 'meta', 'dns']);
+    expect(own.options.map((o) => o.method)).toEqual(['badge', 'manifest', 'well-known', 'meta', 'dns']);
     const shared = verifyHelp({ origin: 'https://me.vercel.app', verify_token: 't' });
-    expect(shared.options.map((o) => o.method)).toEqual(['manifest', 'well-known', 'meta']);
+    expect(shared.options.map((o) => o.method)).toEqual(['badge', 'manifest', 'well-known', 'meta']);
     expect(shared.note).toContain('vercel.app');
   });
 
@@ -331,6 +331,8 @@ d('store end to end', () => {
   test('app pages carry the badge builder and the badges are served', async () => {
     const page = await (await app.request('/apps/notes')).text();
     expect(page).toContain('id="share"');
+    expect(page).toContain('Square SVG icon badge');
+    expect(page).toContain('http://localhost:3999/apps/notes/icon-badge.svg');
     expect(page).toContain('[![Get notes on pwamart](http://localhost:3999/badges/get-it-on-pwamart.svg)](http://localhost:3999/apps/notes)');
     expect(page).toContain('https://x.com/intent/post?text=');
     expect(page).toContain('https://bsky.app/intent/compose?text=');
@@ -352,6 +354,15 @@ d('store end to end', () => {
     expect(await (await app.request('/apps/notes/badge.svg?theme=light')).text()).toContain('fill="#fff"');
     expect((await app.request('/apps/nope-nope/badge.svg')).status).toBe(404);
 
+    const square = await app.request('/apps/notes/icon-badge.svg');
+    expect(square.status).toBe(200);
+    expect(square.headers.get('content-type')).toContain('image/svg+xml');
+    const squareSvg = await square.text();
+    expect(squareSvg).toContain('width="128" height="128"');
+    expect(squareSvg).toContain('href="data:image/png;base64,');
+    expect(await (await app.request('/apps/notes/icon-badge.svg?theme=light')).text()).toContain('fill="#fff"');
+    expect((await app.request('/apps/nope-nope/icon-badge.svg')).status).toBe(404);
+
     const site = encodeURIComponent(`${base}/`);
     const listed = await (await app.request(`/for.svg?site=${site}`)).text();
     expect(listed).toContain('GET IT ON');
@@ -371,6 +382,8 @@ d('store end to end', () => {
     expect(r.status).toBe(200);
     expect(r.body.html).toContain('http://localhost:3999/apps/notes/badge.svg');
     expect(r.body.markdown).toContain('(http://localhost:3999/apps/notes?ref=badge)');
+    expect(r.body.square_html).toContain('http://localhost:3999/apps/notes/icon-badge.svg');
+    expect(r.body.square_markdown_light).toContain('icon-badge.svg?theme=light');
     expect(r.body.verified).toBe(false);
     const bySite = await anon('GET', `/badge?site=${encodeURIComponent(`${base}/notes/`)}`);
     expect(bySite.body.listed).toBe(true);
@@ -910,7 +923,8 @@ d('throttle', () => {
     t.resetTrafficGuard();
     try {
       const hit = (path, ip) => app.request(path, { headers: { 'x-real-ip': ip } });
-      for (let i = 0; i < 3; i++) expect((await hit('/apps', '203.0.113.9')).status).toBe(200);
+      // The shared throttle leaves 5x headroom for non-guard limits.
+      for (let i = 0; i < 15; i++) expect((await hit('/apps', '203.0.113.9')).status).toBe(200);
       const over = await hit('/apps', '203.0.113.9');
       // No COINPAY_X402_KEY in tests, so the fallback answer: 429 with Retry-After.
       expect([402, 429]).toContain(over.status);

@@ -61,6 +61,7 @@ export function shape(row) {
       ios_profile: `/apps/${row.slug}/install.mobileconfig`,
       cli: `npx -y @profullstack/pwamart install ${row.slug}`,
       badge: `/apps/${row.slug}/badge.svg`,
+      icon_badge: `/apps/${row.slug}/icon-badge.svg`,
     },
   };
 }

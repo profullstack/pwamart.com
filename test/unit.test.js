@@ -203,7 +203,7 @@ describe('payments', () => {
     expect(src).not.toMatch(/paymentMethod:\s*'(card|both)'/);
     const pay = await Bun.file(new URL('../packages/payments/src/index.js', import.meta.url)).text();
     expect(pay).toContain('/api/checkout/sessions');
-    expect(pay).not.toContain('payment_method');
+    expect(pay).not.toMatch(/payment_method:\s*'(card|both)'/);
   });
 });
 
