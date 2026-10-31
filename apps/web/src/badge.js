@@ -94,42 +94,6 @@ export function badgeSvg(app, t = 'dark') {
   return frame(theme(t), label, 'GET IT ON', right);
 }
 
-/** A square SVG badge using the app's own icon, with a small pwamart mark. */
-export function squareIconBadgeSvg(app, iconDataUrl, t = 'dark') {
-  const light = theme(t) === 'light';
-  const bg = light ? '#fff' : '#101814';
-  const stroke = light ? '#cbd1cd' : '#64706a';
-  const safeIcon = /^data:image\/(?:svg\+xml|png|jpeg|webp);base64,[a-z0-9+/]+={0,2}$/i.test(iconDataUrl ?? '')
-    ? iconDataUrl
-    : null;
-  const initials = [...String(app.name ?? '?').trim()][0] ?? '?';
-  const label = `Get ${app.name} on pwamart, square icon badge`;
-  const image = safeIcon
-    ? `<image href="${safeIcon}" x="7" y="7" width="114" height="114" preserveAspectRatio="xMidYMid meet" clip-path="url(#icon-clip)"/>`
-    : `<text x="64" y="78" text-anchor="middle" fill="${light ? '#16211d' : '#f6f4ed'}" font-family="${SANS}" font-size="56" font-weight="700">${esc(initials.toUpperCase())}</text>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" viewBox="0 0 ${SQUARE_BADGE_SIZE} ${SQUARE_BADGE_SIZE}" role="img" aria-label="${esc(label)}">
-<title>${esc(label)}</title>
-<rect x=".5" y=".5" width="127" height="127" rx="25" fill="${bg}" stroke="${stroke}"/>
-<defs><clipPath id="icon-clip"><rect x="7" y="7" width="114" height="114" rx="22"/></clipPath></defs>
-${image}
-${mark(94, 94)}
-</svg>`;
-}
-
-/** Fetch and inline a bounded public app icon so SVG hosts can display the badge reliably. */
-export async function squareBadgeIconData(app) {
-  const url = app.icon_url ?? app.icon;
-  if (!url) return null;
-  try {
-    const r = await safeFetch(url, { accept: 'image/svg+xml,image/png,image/jpeg,image/webp', maxBytes: 1024 * 1024 });
-    const mime = r.type.split(';', 1)[0].trim().toLowerCase();
-    if (r.status >= 400 || !r.bytes?.length || !['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'].includes(mime)) return null;
-    return `data:${mime};base64,${r.bytes.toString('base64')}`;
-  } catch {
-    return null;
-  }
-}
-
 /** The badge for a site with no listing: an invitation to list it. */
 export function listBadgeSvg(t = 'dark') {
   return frame(theme(t), 'List your PWA free on pwamart', 'LIST YOUR PWA FREE ON');
@@ -147,16 +111,14 @@ export function badgeSnippets(app, siteUrl) {
       markdown: `[![${alt}](${src})](${page})`,
     };
   };
-  const square = (t) => {
-    const src = `${siteUrl}/apps/${app.slug}/icon-badge.svg${t === 'light' ? '?theme=light' : ''}`;
-    const squareAlt = `${alt} square icon badge`;
-    return {
-      image: src,
-      html: `<a href="${page}"><img src="${src}" alt="${esc(squareAlt)}" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" loading="lazy"></a>`,
-      markdown: `[![${squareAlt}](${src})](${page})`,
-    };
+  const squareImage = `${siteUrl}/apps/${app.slug}/icon-badge.svg`;
+  const squareAlt = `Get ${app.name} on pwamart`;
+  const square = {
+    image: squareImage,
+    html: `<a href="${page}"><img src="${squareImage}" alt="${esc(squareAlt)}" width="${SQUARE_BADGE_SIZE}" height="${SQUARE_BADGE_SIZE}" loading="lazy"></a>`,
+    markdown: `[![${squareAlt}](${squareImage})](${page})`,
   };
-  return { page, alt, dark: one('dark'), light: one('light'), square: square('dark'), square_light: square('light') };
+  return { page, alt, dark: one('dark'), light: one('light'), square };
 }
 
 /** The by-site snippet (what the shared footer uses): one line that works on any site. */
@@ -168,7 +130,7 @@ export function siteSnippet(siteUrl, homepage) {
 /* ------------------------------------------------------------- lookups -- */
 
 const FIELDS = (sql) => sql`
-  a.id, a.slug, a.name, a.url, a.origin, a.icon_url, a.installs, a.rating_count,
+  a.id, a.slug, a.name, a.url, a.origin, a.installs, a.rating_count,
   case when a.rating_count > 0 then round(a.rating_sum::numeric / a.rating_count, 1) else null end as rating,
   a.badge_verified_at, a.badge_checked_at`;
 
