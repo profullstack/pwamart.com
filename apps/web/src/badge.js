@@ -20,6 +20,7 @@ import { safeFetch } from './inspect.js';
 export const BADGE_W = 200;
 export const BADGE_H = 44;
 export const SQUARE_BADGE_SIZE = 128;
+export const PWAMART_OPENICON_URL = 'https://logicsrc.com/openicon/set/hq/svg/pwamart.svg';
 
 const esc = (v) =>
   String(v ?? '')

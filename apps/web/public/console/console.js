@@ -476,7 +476,7 @@ async function appDetail(slug, note = '') {
         app.status === 'published'
           ? `<p class="muted" style="font-size:13px">A live badge for your site: rating + installs, linking to your listing. When ${esc(app.url)} links back, the listing gets the ✓ and a followed link to your site.</p>
       <p style="display:flex;gap:10px;flex-wrap:wrap"><img src="/apps/${esc(app.slug)}/badge.svg" alt="badge" width="200" height="44"><img src="/apps/${esc(app.slug)}/badge.svg?theme=light" alt="badge, light" width="200" height="44"></p>
-      <h3 style="margin:18px 0 6px">Square pwamart icon badge</h3><p class="muted" style="font-size:13px;margin:0 0 10px">Use pwamart’s square brand icon in your README or website. Open the SVG or copy a ready-made snippet below.</p>
+      <h3 style="margin:18px 0 6px">Square PwaMart brand badge</h3><p class="muted" style="font-size:13px;margin:0 0 10px">Uses the canonical PwaMart mark from OpenIcons HQ, never the listed app’s icon. Open the SVG or copy a ready-made snippet below.</p>
       <p style="display:flex;gap:10px;flex-wrap:wrap"><a href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener"><img src="/apps/${esc(app.slug)}/icon-badge.svg" alt="Open pwamart square icon badge" width="96" height="96"></a></p>
       <div class="row" style="margin-bottom:12px"><a class="btn sm" href="/apps/${esc(app.slug)}/icon-badge.svg" target="_blank" rel="noopener">Open square SVG ↗</a></div>
       <div id="badge-snips"><p class="muted">Loading…</p></div>
