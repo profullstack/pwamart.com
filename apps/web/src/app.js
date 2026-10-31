@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +35,9 @@ const pub = (name) => readFileSync(join(PUB, name));
 const root = join(here, '..', '..', '..');
 const VERSION = JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')).version;
 const INSTALL_SH = readFileSync(join(root, 'bin/install.sh'), 'utf8');
+const assetVersion = (name) => createHash('sha256').update(pub(name)).digest('hex').slice(0, 12);
+const CONSOLE_JS_VERSION = assetVersion('console/console.js');
+const CONSOLE_CSS_VERSION = assetVersion('console/console.css');
 
 export const app = new Hono();
 
@@ -343,8 +347,14 @@ app.get('/healthz', (c) => c.text('ok'));
 
 // The shell carries the shared profile fields as a <template> (user-profile.js)
 // for the sign-up form and the contact panel.
-const shell = (c) =>
-  c.html(pub('console/index.html').toString().replace('</body>', `${profileTemplate()}\n</body>`), 200, { 'cache-control': 'no-cache' });
+const shell = (c) => {
+  const html = pub('console/index.html')
+    .toString()
+    .replace('href="/assets/console.css"', `href="/assets/console.css?v=${CONSOLE_CSS_VERSION}"`)
+    .replace('src="/assets/console.js"', `src="/assets/console.js?v=${CONSOLE_JS_VERSION}"`)
+    .replace('</body>', `${profileTemplate()}\n</body>`);
+  return c.html(html, 200, { 'cache-control': 'no-cache' });
+};
 for (const p of ['/console', '/console/*', '/signin', '/signup', '/invites']) app.get(p, shell);
 
 // An invite link. Remembered in a cookie (and then on the emailed sign-in link)
