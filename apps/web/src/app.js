@@ -12,7 +12,7 @@ import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, feat
 import { CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
-import { advertisePage, appPage, invitePage, leaderboardPage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
+import { advertisePage, appPage, invitePage, leaderboardPage, leaderboardProfilePage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
 import { rss } from './releases.js';
 import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, installScript, mcpConfig, pick, summarize } from './collections.js';
 import { surfaceKey } from './surfaces.js';
@@ -247,6 +247,11 @@ app.get('/leaderboard', async (c) => {
     fallback = true;
   }
   return c.html(leaderboardPage({ board, period, fallback, earn: karma.howToEarn(), perCredit: karma.perCredit(), stats: await stats() }), 200, { 'cache-control': 'public, max-age=30' });
+});
+app.get('/leaderboard/u/:player', async (c) => {
+  const profile = await karma.leaderboard().profile(c.req.param('player'));
+  if (!profile) return c.html(notFoundPage({ stats: await stats() }), 404);
+  return c.html(leaderboardProfilePage({ profile, stats: await stats() }), 200, { 'cache-control': 'public, max-age=30' });
 });
 app.get('/leaderboard.json', async (c) => (await karma.leaderboard().handle(c.req.raw)) ?? c.json({ error: 'not found' }, 404));
 app.use('/leaderboard/*', async (c, next) => leaderboardMiddleware(karma.leaderboard())(c, next));
