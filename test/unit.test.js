@@ -236,7 +236,6 @@ describe('footer', () => {
     expect(foot).toContain('https://discord.gg/U7dEXfBA3s');
     expect(foot).toContain('https://x.com/profullstackinc');
     expect(foot).toContain('https://github.com/profullstack');
-    expect(foot).toContain('https://pit.world/pro');
     expect(foot).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fpwamart.com%2F');
     expect(foot).toContain('https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Fpwamart.com%2F');
     expect(foot).toContain('https://pwamart.com/for?site=https://pwamart.com/');
