@@ -249,7 +249,12 @@ app.get('/leaderboard', async (c) => {
   return c.html(leaderboardPage({ board, period, fallback, earn: karma.howToEarn(), perCredit: karma.perCredit(), stats: await stats() }), 200, { 'cache-control': 'public, max-age=30' });
 });
 app.get('/leaderboard/u/:player', async (c) => {
-  const profile = await karma.leaderboard().profile(c.req.param('player'));
+  const player = c.req.param('player');
+  // Hono includes the filename suffix in this segment parameter, so let the
+  // package keep serving its public JSON representation from the same URL.
+  if (player.endsWith('.json'))
+    return (await karma.leaderboard().handle(c.req.raw)) ?? c.json({ error: 'not found' }, 404);
+  const profile = await karma.leaderboard().profile(player);
   if (!profile) return c.html(notFoundPage({ stats: await stats() }), 404);
   return c.html(leaderboardProfilePage({ profile, stats: await stats() }), 200, { 'cache-control': 'public, max-age=30' });
 });
