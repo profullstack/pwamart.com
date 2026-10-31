@@ -51,7 +51,7 @@ app.use('*', async (c, next) => {
     c.header(
       'content-security-policy',
       // crawlproof.com: stats.js (script + beacons) and the ad frame. Nothing else is third party.
-      "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://crawlproof.com; connect-src 'self' https://crawlproof.com; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://crawlproof.com; connect-src 'self' https://crawlproof.com https://pit.world; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://pit.world",
     );
 });
 

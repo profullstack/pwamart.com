@@ -1,44 +1,45 @@
 /**
- * The pit.world network footer, fetched server-side from pit.world/snippets.
- * It sits under the store's own footer, as the last thing in <body>.
- *
- * The page templates are synchronous, so a middleware calls refreshFooter()
- * before the handlers run and the pages read the last fetched string. Only the
- * very first fetch is awaited (3 s timeout); after that a copy older than an
- * hour refreshes in the background and a failed fetch keeps the stale copy.
- * With no copy at all the network footer is simply left out.
+ * PwaMart's single footer comes from the shared @profullstack/footer template.
+ * Keep a bundled copy ready for the first request, then refresh the shared
+ * template in the background through the package's cache. Publishing one
+ * template updates every site that uses this module without another code edit.
  */
-const PIT_FOOTER_URL = 'https://pit.world/snippets/footer.html?site=pwamart.com';
-const TTL_MS = 60 * 60 * 1000;
+import { footerHtml, footerHtmlSync } from '@profullstack/footer';
 
-let current = '';
-let fetchedAt = 0;
+const OPTIONS = {
+  site: 'https://pwamart.com/',
+  since: 2026,
+  links: [
+    { label: 'Browse apps', href: '/apps' },
+    { label: 'Collections', href: '/collections' },
+    { label: 'Publishers', href: '/publishers' },
+    { label: 'Developers', href: '/developers' },
+    { label: 'API', href: '/developers#api' },
+    { label: 'Pricing', href: '/pricing' },
+    { label: 'Advertise', href: '/advertise' },
+    { label: 'Karma', href: '/leaderboard' },
+    { label: 'Newsletter', href: '/newsletter' },
+    { label: 'llms.txt', href: '/llms.txt' },
+    { label: 'PwaMart on GitHub', href: 'https://github.com/profullstack/pwamart.com', rel: 'noopener noreferrer' },
+  ],
+  pwamartHref: 'https://pwamart.com/for?site=https://pwamart.com/',
+  builtIndieHref: 'https://built.indie.pit.world/for?site=https://pwamart.com/',
+};
+
+let current = footerHtmlSync(OPTIONS);
 let inflight = null;
-let first = true;
 
-function fetchPit() {
-  inflight ??= fetch(PIT_FOOTER_URL, { signal: AbortSignal.timeout(3000) })
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`pit footer ${res.status}`);
-      const text = await res.text();
-      if (!text.includes('data-pit-footer')) throw new Error('pit footer: unexpected body');
-      current = text;
-      fetchedAt = Date.now();
+export const siteFooter = () => current;
+
+export async function refreshFooter() {
+  if (inflight) return inflight;
+  inflight = footerHtml(OPTIONS)
+    .then((html) => {
+      if (html.includes('data-pfs-footer=')) current = html;
     })
     .catch(() => {})
     .finally(() => {
       inflight = null;
     });
   return inflight;
-}
-
-export const siteFooter = () => current;
-
-export async function refreshFooter() {
-  if (Date.now() - fetchedAt < TTL_MS) return;
-  const p = fetchPit();
-  if (first) {
-    first = false;
-    await p;
-  }
 }
