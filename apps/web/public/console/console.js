@@ -142,8 +142,9 @@ const SIGNIN_ERRORS = {
  * the shell's <template id="profile-fields"> so the markup is the package's own.
  * Cloned into the sign-up form and the contact panel; email is each form's own box.
  */
-function profileFields(values = {}) {
-  const frag = $('#profile-fields').content.cloneNode(true);
+function profileFields(values = {}, importOpenProfile = false) {
+  const template = $(importOpenProfile ? '#contact-profile-fields' : '#profile-fields');
+  const frag = template.content.cloneNode(true);
   frag.querySelectorAll('input').forEach((i) => {
     if (values[i.name] != null) i.value = values[i.name];
   });
@@ -1052,7 +1053,8 @@ async function keys() {
     <form class="row" id="kf" style="margin:12px 0 18px"><input class="f" name="name" placeholder="Key name, e.g. laptop" style="padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)"><button class="btn dark sm">Create key</button></form>
     <div id="newkey"></div>
     ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${list.map((k) => `<tr><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}…</code></td><td>${k.last_used_at ? esc(k.last_used_at.slice(0, 10)) : 'never'}</td><td><button class="btn sm" data-revoke="${esc(k.id)}">Revoke</button></td></tr>`).join('')}</tbody></table></div>` : ''}`;
-  $('#pf button').before(profileFields(profile));
+  $('#pf button').before(profileFields(profile, true));
+  enhanceProfile();
   $('#pf').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     try {

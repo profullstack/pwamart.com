@@ -20,7 +20,8 @@ export const profiles = new Proxy({}, { get: (_, k) => (store ??= createProfileS
  */
 export const PROFILE_FIELDS = COLUMNS.filter((f) => f !== 'email');
 export const profileTemplate = () =>
-  `<template id="profile-fields">${renderProfileFields({ fields: PROFILE_FIELDS })}</template>`;
+  `<template id="profile-fields">${renderProfileFields({ fields: PROFILE_FIELDS })}</template>
+   <template id="contact-profile-fields">${renderProfileFields({ fields: PROFILE_FIELDS, importOpenProfile: true })}</template>`;
 
 /** Company-from-work-email helper, served as a file (/assets/profile.js). */
 export { PROFILE_ENHANCE_SCRIPT };

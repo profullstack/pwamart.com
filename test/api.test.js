@@ -1365,9 +1365,11 @@ d('signup profile (@profullstack/profile)', () => {
 
   test('the console shell carries the fields, and the helper script is served', async () => {
     const page = await (await app.request('/signup')).text();
+    const signupFields = page.match(/<template id="profile-fields">([\s\S]*?)<\/template>/)?.[1] ?? '';
     for (const name of ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url'])
-      expect(page.match(new RegExp(`name="${name}"`, 'g'))?.length).toBe(1);
+      expect(signupFields.match(new RegExp(`name="${name}"`, 'g'))?.length).toBe(1);
     expect(page).toContain('<template id="profile-fields">');
+    expect(page).toContain('<template id="contact-profile-fields">');
     expect((await app.request('/signin')).status).toBe(200);
     expect((await app.request('/assets/profile.js')).headers.get('content-type')).toContain('javascript');
   });

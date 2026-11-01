@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { db } from '@pwamart/db';
+import { saveOpenProfileContact } from '@profullstack/profile';
 import {
   exchangeCoinPayCode,
   fetchCoinPayUserinfo,
@@ -11,6 +12,7 @@ import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { config } from './config.js';
 import { INVITE_COOKIE, REF_COOKIE, welcomeNewAccount } from './credits.js';
+import { profiles } from './user-profile.js';
 
 /**
  * Sign in with CoinPay: the house identity provider (OIDC at coinpayportal.com,
@@ -95,6 +97,13 @@ export function mountCoinPaySignin(app) {
       const [owner] = await sql`select id from users where coinpay_sub = ${claims.sub}`;
       if (owner && owner.id !== current.id) return c.redirect('/console/keys?coinpay=taken', 302);
       await sql`update users set coinpay_sub = ${claims.sub} where id = ${current.id}`;
+      if (typeof claims.openprofile_url === 'string') {
+        try {
+          await saveOpenProfileContact(profiles, String(current.id), claims.openprofile_url);
+        } catch (err) {
+          console.warn('[coinpay] OpenProfile import skipped:', err instanceof Error ? err.message : err);
+        }
+      }
       return c.redirect(saved.next === '/console' ? '/console/keys?coinpay=connected' : saved.next, 302);
     }
     [user] = await sql`select * from users where coinpay_sub = ${claims.sub}`;
@@ -112,6 +121,13 @@ export function mountCoinPaySignin(app) {
       // A new account: CoinPay vouched for it, so it takes the invite and ?ref= this browser carried.
       await welcomeNewAccount(user, { invite: getCookie(c, INVITE_COOKIE), ref: getCookie(c, REF_COOKIE) });
       c.header('set-cookie', `${INVITE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`, { append: true });
+    }
+    if (typeof claims.openprofile_url === 'string') {
+      try {
+        await saveOpenProfileContact(profiles, String(user.id), claims.openprofile_url);
+      } catch (err) {
+        console.warn('[coinpay] OpenProfile import skipped:', err instanceof Error ? err.message : err);
+      }
     }
     const sessionId = await auth.startSessionFor(user.id, c.req.header('user-agent'));
     c.header('set-cookie', auth.sessionCookie(sessionId), { append: true });
