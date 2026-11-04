@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pm_bg">#16211d</color>
+    <color name="pm_fg">#f6f4ed</color>
+    <color name="pm_accent">#e2582f</color>
+
+    <style name="PmTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/pm_bg</item>
+        <item name="android:colorAccent">@color/pm_accent</item>
+        <item name="android:colorPrimary">@color/pm_bg</item>
+        <item name="android:colorPrimaryDark">@color/pm_bg</item>
+        <item name="android:textColor">@color/pm_fg</item>
+    </style>
+
+    <style name="PmDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/pm_accent</item>
+        <item name="android:background">@color/pm_bg</item>
+        <item name="android:textColor">@color/pm_fg</item>
+    </style>
+</resources>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#16211d"/>
+  <g transform="translate(110 220) scale(4.4)">
+    <ellipse cx="32" cy="32" rx="27" ry="10.5" transform="rotate(-28 32 32)" fill="none" stroke="#f6f4ed" stroke-opacity=".28" stroke-width="1.6"/>
+    <rect x="16" y="16" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="16" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="34" y="34" width="14" height="14" rx="4" fill="#f6f4ed"/>
+    <rect x="34" y="16" width="14" height="14" rx="7" fill="#e2582f"/>
+    <path d="M41 19.5v7M37.5 23h7" stroke="#16211d" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <text x="460" y="390" font-family="DejaVu Serif" font-size="124" fill="#f6f4ed">pwamart<tspan fill="#e2582f">.</tspan></text>
+  <text x="466" y="470" font-family="DejaVu Sans" font-size="46" fill="#e2582f">the app store for web apps</text>
+</svg>
