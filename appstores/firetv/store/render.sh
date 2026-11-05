@@ -1,6 +1,6 @@
 #!/bin/sh
 # Renders the launcher icons, TV banner and Amazon Appstore art from store/src/*.svg.
-# Runs inside alpine (see firetv/README.md): docker run --rm -v "$PWD/firetv:/w" -w /w alpine:3.20 sh store/render.sh
+# Runs inside alpine (see firetv/README.md): docker run --rm -v "$PWD/appstores/firetv:/w" -w /w alpine:3.20 sh store/render.sh
 set -eu
 apk add --no-cache rsvg-convert font-dejavu >/dev/null
 R=app/src/main/res
