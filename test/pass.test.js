@@ -1,5 +1,5 @@
 /**
- * Profullstack Pass: an active CoinPay `pass` claim is Pro until it expires,
+ * Profullstack Pass: an active CoinPay `pass` claim is Unlimited until it expires,
  * once per pass, through the same gift path as credit codes. Pure parts run
  * anywhere; the grant against a real Postgres (DATABASE_URL), like api.test.js.
  */
@@ -26,7 +26,7 @@ describe('pass: reading the claim', () => {
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const d = HAS_DB ? describe : describe.skip;
 
-d('pass: granting Pro', () => {
+d('pass: granting the top plan', () => {
   let db;
   let auth;
   const run = randomBytes(4).toString('hex');
@@ -38,7 +38,7 @@ d('pass: granting Pro', () => {
     auth = await import('../apps/web/src/auth.js');
   });
 
-  test('an active pass is Pro until it expires, granted once', async () => {
+  test('an active pass is Unlimited until it expires, granted once', async () => {
     const user = await auth.findOrCreateUser(`pass-${run}@example.test`);
     const exp = future(20);
     const pass = billing.passFromClaims({ pass: { active: true, expires_at: exp } });
@@ -47,13 +47,13 @@ d('pass: granting Pro', () => {
     const again = await db().begin((tx) => billing.grantPass(tx, { userId: user.id, sub: `sub-${run}`, pass }));
     expect(again).toEqual({ already: true });
     const plan = await billing.currentPlan(user.id);
-    expect(plan.key).toBe('pro');
+    expect(plan.key).toBe('unlimited');
     expect(new Date(plan.paid_through).toISOString()).toBe(exp);
     const periods = await db()`select 1 from plan_periods where user_id = ${user.id}`;
     expect(periods.length).toBe(1);
-    // Gift time is never credited against an upgrade.
+    // A paid year bought during the pass queues after it.
     const q = await billing.quote(user.id, 'unlimited');
-    expect(q.credit_cents).toBe(0);
+    expect(new Date(q.starts_at).toISOString()).toBe(exp);
   });
 
   test('no pass grants nothing', async () => {

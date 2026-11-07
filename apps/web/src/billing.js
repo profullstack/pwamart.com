@@ -166,14 +166,15 @@ export function passFromClaims(claims, now = new Date()) {
 }
 
 /**
- * An active pass is Pro from now until the pass expires: the same gift path as
+ * An active pass is Unlimited (the top plan: full paid access) from now until
+ * the pass expires, on the same gift path as
  * grantDays (a zero-amount 'grant' payment + plan_grants + one period), but the
  * period ends exactly at the pass expiry and is not queued after paid time.
  * Idempotent per user and pass: source `coinpay-pass:<coinpay sub>:<expires_at>`.
  * Gift time is never credited against an upgrade, and a paid year bought during
  * the pass queues after it.
  */
-export async function grantPass(tx, { userId, sub, pass, plan = 'pro' }) {
+export async function grantPass(tx, { userId, sub, pass, plan = 'unlimited' }) {
   if (!userId || !sub || !pass?.active || !(pass.expiresAt instanceof Date)) return null;
   if (!PLANS[plan] || plan === 'free') throw new Error('bad plan');
   const ends = pass.expiresAt;

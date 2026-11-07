@@ -91,7 +91,7 @@ export function mountCoinPaySignin(app) {
     if (!claims?.sub) return fail('coinpay-failed');
     const sql = db();
     const current = await auth.userFromSession(getCookie(c, config.session.cookie));
-    // Profullstack Pass: seen only here, so an active one becomes Pro until it
+    // Profullstack Pass: seen only here, so an active one becomes Unlimited until it
     // expires, bound to the CoinPay sub (never the email), once per pass.
     const pass = passFromClaims(claims);
     const applyPass = async (userId) => {

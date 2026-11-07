@@ -794,7 +794,7 @@ export function pricingPage({ stats, net = null }) {
     <div class="eyebrow">Pricing for publishers</div>
     <h1 style="margin:10px auto 14px;max-width:820px">Installing is always free. Listing starts free too.</h1>
     <p class="lede" style="margin:0 auto">Pay by the year through CoinPay, in any major coin or PayPal. No cut of your sales, ever: your app takes its own payments.</p>
-    <p class="muted" style="margin:.5rem auto 0;text-align:center">Deposit $99 in your CoinPay wallet and get a free month: <a href="https://coinpayportal.com/pass">CoinPay Pass</a> (Pro until it ends; sign in with CoinPay).</p>
+    <p class="muted" style="margin:.5rem auto 0;text-align:center">Deposit $99 in your CoinPay wallet and get a free month: <a href="https://coinpayportal.com/pass">CoinPay Pass</a> (Unlimited until it ends; sign in with CoinPay).</p>
   </section>
   <div class="plans">
     <div class="plan">
