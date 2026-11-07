@@ -149,6 +149,53 @@ export async function grantDays(tx, { userId, days, source, plan = 'pro', produc
   return { granted: true, days: n, ...p };
 }
 
+/**
+ * Profullstack Pass (https://coinpayportal.com/pass): a CoinPay user who
+ * deposited $99 into their own CoinPay wallet gets a free month here. CoinPay
+ * sends it as the userinfo claim `pass: { active, expires_at }`, seen only at
+ * sign-in. Active only when `active === true` AND `expires_at` parses to a
+ * future date.
+ */
+export const PASS_URL = 'https://coinpayportal.com/pass';
+export function passFromClaims(claims, now = new Date()) {
+  const pass = claims && typeof claims === 'object' ? claims.pass : null;
+  if (!pass || typeof pass !== 'object') return { active: false, expiresAt: null };
+  const raw = typeof pass.expires_at === 'string' && pass.expires_at.trim() ? new Date(pass.expires_at) : null;
+  const expiresAt = raw && Number.isFinite(raw.getTime()) ? raw : null;
+  return { active: pass.active === true && expiresAt !== null && expiresAt.getTime() > now.getTime(), expiresAt };
+}
+
+/**
+ * An active pass is Unlimited (the top plan: full paid access) from now until
+ * the pass expires, on the same gift path as
+ * grantDays (a zero-amount 'grant' payment + plan_grants + one period), but the
+ * period ends exactly at the pass expiry and is not queued after paid time.
+ * Idempotent per user and pass: source `coinpay-pass:<coinpay sub>:<expires_at>`.
+ * Gift time is never credited against an upgrade, and a paid year bought during
+ * the pass queues after it.
+ */
+export async function grantPass(tx, { userId, sub, pass, plan = 'unlimited' }) {
+  if (!userId || !sub || !pass?.active || !(pass.expiresAt instanceof Date)) return null;
+  if (!PLANS[plan] || plan === 'free') throw new Error('bad plan');
+  const ends = pass.expiresAt;
+  const source = `coinpay-pass:${sub}:${ends.toISOString()}`;
+  await tx`select pg_advisory_xact_lock(hashtext(${`billing:${userId}`}))`;
+  const [payment] = await tx`
+    insert into payments (user_id, provider, provider_ref, amount_cents, status, raw)
+    values (${userId}, 'grant', ${`${source}:${userId}`}, 0, 'paid',
+            ${tx.json({ metadata: { user_id: userId, plan, product: 'coinpay-pass', source, expires_at: ends.toISOString() } })})
+    on conflict (provider, provider_ref) do nothing
+    returning id`;
+  if (!payment) return { already: true };
+  await tx`insert into plan_grants (payment_id, user_id, plan) values (${payment.id}, ${userId}, ${plan})`;
+  const [p] = await tx`
+    insert into plan_periods (user_id, plan, starts_at, ends_at, payment_id)
+    select ${userId}, ${plan}, now(), ${ends}::timestamptz, ${payment.id}
+    where ${ends}::timestamptz > now()
+    returning plan, starts_at, ends_at`;
+  return { granted: Boolean(p), ...(p ?? {}) };
+}
+
 export async function setRenew(sql, userId, renew) {
   await sql`
     insert into account_billing (user_id, renew, canceled_at, updated_at)
