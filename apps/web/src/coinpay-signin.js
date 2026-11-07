@@ -10,6 +10,7 @@ import {
 } from '@profullstack/stack/coinpay';
 import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
+import { grantPass, passFromClaims } from './billing.js';
 import { config } from './config.js';
 import { INVITE_COOKIE, REF_COOKIE, welcomeNewAccount } from './credits.js';
 import { profiles } from './user-profile.js';
@@ -90,6 +91,17 @@ export function mountCoinPaySignin(app) {
     if (!claims?.sub) return fail('coinpay-failed');
     const sql = db();
     const current = await auth.userFromSession(getCookie(c, config.session.cookie));
+    // Profullstack Pass: seen only here, so an active one becomes Pro until it
+    // expires, bound to the CoinPay sub (never the email), once per pass.
+    const pass = passFromClaims(claims);
+    const applyPass = async (userId) => {
+      if (!pass.active) return;
+      try {
+        await sql.begin((tx) => grantPass(tx, { userId, sub: claims.sub, pass }));
+      } catch (err) {
+        console.error(`[coinpay-signin] pass grant failed: ${err.message}`);
+      }
+    };
 
     let user;
     if (current) {
@@ -97,6 +109,7 @@ export function mountCoinPaySignin(app) {
       const [owner] = await sql`select id from users where coinpay_sub = ${claims.sub}`;
       if (owner && owner.id !== current.id) return c.redirect('/console/keys?coinpay=taken', 302);
       await sql`update users set coinpay_sub = ${claims.sub} where id = ${current.id}`;
+      await applyPass(current.id);
       if (typeof claims.openprofile_url === 'string') {
         try {
           await saveOpenProfileContact(profiles, String(current.id), claims.openprofile_url);
@@ -122,6 +135,7 @@ export function mountCoinPaySignin(app) {
       await welcomeNewAccount(user, { invite: getCookie(c, INVITE_COOKIE), ref: getCookie(c, REF_COOKIE) });
       c.header('set-cookie', `${INVITE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`, { append: true });
     }
+    await applyPass(user.id);
     if (typeof claims.openprofile_url === 'string') {
       try {
         await saveOpenProfileContact(profiles, String(user.id), claims.openprofile_url);
