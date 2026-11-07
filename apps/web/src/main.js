@@ -22,7 +22,8 @@ if (configured()) {
 if (config.crawlproof.apiToken) (await import('./crawlproof.js')).refreshNetwork();
 
 const port = Number(process.env.PORT || 3000);
-const server = Bun.serve({ port, fetch: app.fetch, idleTimeout: 30 });
+// 120 s: "Fill from website" waits on c0mpute for up to BIO_TIMEOUT_MS (profile.js).
+const server = Bun.serve({ port, fetch: app.fetch, idleTimeout: 120 });
 console.log(
   `[web] pwamart listening on :${server.port} · site ${config.siteUrl} · mail ${config.mail.enabled ? 'on' : 'off'} · payments ${config.coinpay.enabled ? 'on' : 'off'}`,
 );

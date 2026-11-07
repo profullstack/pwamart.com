@@ -49,10 +49,26 @@ describe('inspector parsing', () => {
 
   test('page text for a bio drops scripts and tags; no key means no AI bio', async () => {
     expect(pageText('<style>x{}</style><h1>Acme</h1><script>evil()</script><p>We make&nbsp;tools &amp; more.</p>')).toBe('Acme We make tools & more.');
-    const key = process.env.ANTHROPIC_API_KEY;
+    const saved = { a: process.env.ANTHROPIC_API_KEY, o: process.env.OPENAI_API_KEY, c: process.env.C0MPUTE_API_KEY };
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.C0MPUTE_API_KEY;
     expect(await aiBio({ name: 'Acme', url: 'https://a.example', text: 'Acme makes tools.' })).toBe(null);
-    if (key) process.env.ANTHROPIC_API_KEY = key;
+    if (saved.a) process.env.ANTHROPIC_API_KEY = saved.a;
+    if (saved.o) process.env.OPENAI_API_KEY = saved.o;
+    if (saved.c) process.env.C0MPUTE_API_KEY = saved.c;
+  });
+
+  test('a bio comes from c0mpute first; every provider failing leaves it empty', async () => {
+    const asked = [];
+    const answering = (text) => ({
+      run: async (task) => ({ value: await task({ name: 'c0mpute', generate: async (req) => (asked.push(req), { text }) }) }),
+    });
+    const args = { name: 'Acme', url: 'https://a.example', text: 'Acme makes tools.' };
+    expect(await aiBio(args, answering('<think>hm</think>Acme makes tools.'))).toBe('Acme makes tools.');
+    expect(asked[0].user).toContain('Acme makes tools.');
+    expect(await aiBio(args, answering('UNKNOWN'))).toBe(null);
+    expect(await aiBio(args, { run: async () => Promise.reject(new Error('all down')) })).toBe(null);
   });
 
   test('publisher share posts: about 50, all filled, URL last, no em dashes', () => {
