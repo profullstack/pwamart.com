@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getAi } from '@profullstack/ai-providers';
 import { InspectError, listingName, pickIcon, readHead, safeFetch } from './inspect.js';
 
 /**
@@ -9,11 +10,20 @@ import { InspectError, listingName, pickIcon, readHead, safeFetch } from './insp
  * The logo is the best square mark the site publishes: the largest manifest icon,
  * then the apple-touch-icon, then an SVG or PNG favicon, then og:image (usually a
  * wide banner, so last). The bio is the site's own description; only when the site
- * has none does Claude write one from the page text, and without ANTHROPIC_API_KEY
- * (or when the call fails) the bio is left for the publisher to write.
+ * has none does a model write one from the page text: c0mpute first, Claude behind
+ * it. With no key, or when every call fails, the bio is left for the publisher.
  */
 
 const MODEL = 'claude-opus-5-5';
+
+// c0mpute takes 30 s or more here, and the publisher is waiting. main.js keeps the
+// connection open at least this long.
+export const BIO_TIMEOUT_MS = 100_000;
+
+const SYSTEM =
+  'You write the short "about" line for a publisher profile in a web app store. Use only facts stated in the page text you are given. ' +
+  'Write one or two plain sentences, at most 240 characters, in the third person, with no marketing superlatives, no em dashes and no quotation marks. ' +
+  'If the page text does not say what the publisher makes, answer with exactly: UNKNOWN';
 
 export async function fetchProfile(rawUrl, { writeBio = aiBio } = {}) {
   let url;
@@ -95,36 +105,41 @@ export function pageText(html) {
 
 let client = null;
 
-/** One or two sentences about the publisher, from its own page text. Null without a key. */
-export async function aiBio({ name, url, title, text }) {
-  if (!process.env.ANTHROPIC_API_KEY || !text) return null;
+const hasModel = () =>
+  Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY) ||
+  (Boolean(process.env.C0MPUTE_API_KEY) && !/^(1|true|yes|on)$/i.test(process.env.C0MPUTE_DISABLED ?? ''));
+
+/** The paid tier: Claude, as this was before c0mpute went in front of it. */
+async function anthropicBio(user) {
   client ??= new Anthropic();
+  const res = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: SYSTEM,
+    messages: [{ role: 'user', content: user }],
+  });
+  if (res.stop_reason === 'refusal') return null;
+  return res.content
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
+
+/** One or two sentences about the publisher, from its own page text. Null without a key. */
+export async function aiBio({ name, url, title, text }, ai) {
+  if ((!ai && !hasModel()) || !text) return null;
+  const user = `Publisher: ${name}\nWebsite: ${url}\nPage title: ${title ?? ''}\n\n<page_text>\n${text}\n</page_text>`;
   try {
-    const res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      system:
-        'You write the short "about" line for a publisher profile in a web app store. Use only facts stated in the page text you are given. ' +
-        'Write one or two plain sentences, at most 240 characters, in the third person, with no marketing superlatives, no em dashes and no quotation marks. ' +
-        'If the page text does not say what the publisher makes, answer with exactly: UNKNOWN',
-      messages: [
-        {
-          role: 'user',
-          content: `Publisher: ${name}\nWebsite: ${url}\nPage title: ${title ?? ''}\n\n<page_text>\n${text}\n</page_text>`,
-        },
-      ],
+    const { value } = await (ai ?? getAi()).run(async (p) => {
+      if (p.name === 'anthropic') return anthropicBio(user);
+      return (await p.generate({ system: SYSTEM, user, maxTokens: 400, timeoutMs: BIO_TIMEOUT_MS })).text;
     });
-    if (res.stop_reason === 'refusal') return null;
-    const out = res.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
+    const out = value?.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     if (!out || out === 'UNKNOWN') return null;
     return out.replace(/\s+/g, ' ').slice(0, 300);
   } catch (err) {
     // Logged verbatim: a capped or revoked key otherwise fails silently fleet-wide.
-    console.error(`[profile] bio: ${err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err.message}`);
+    console.error(`[profile] bio: ${err.message}`);
     return null;
   }
 }
