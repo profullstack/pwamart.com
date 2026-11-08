@@ -23,7 +23,7 @@ import { sendClaimVerified } from './mail.js';
  * a record added a minute ago is seen.
  */
 
-const SAASROW = () => (process.env.SAASROW_URL || 'https://saasrow.com').replace(/\/$/, '');
+const SAASROW = () => (process.env.SAASROW_URL || 'https://saasrow.pwa.pit.world').replace(/\/$/, '');
 const FAST_MS = 15_000;
 const SLOW_MS = 30_000;
 const FAST_WINDOW_MS = 10 * 60_000;
