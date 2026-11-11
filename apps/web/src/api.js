@@ -14,7 +14,7 @@ import { InspectError, featureColumns, inspect, verifyOrigin } from './inspect.j
 import { SURFACES, cleanSurfaceSet, detectSurfaces, keysOf, mergeSurfaces, surfaceKey, w3bsCatalog } from './surfaces.js';
 import { allCollections, collectionApps, getCollection, summarize } from './collections.js';
 import { sharedHost } from './shared-hosts.js';
-import { send, sendLoginLink, sendOrgInvite } from './mail.js';
+import { send, sendAppPublished, sendAppSubmitted, sendLoginLink, sendOrgInvite } from './mail.js';
 import * as newsletter from './newsletter.js';
 import { appBadgeRow, appBySite, badgeSnippets, checkBadge, siteHost, siteSnippet } from './badge.js';
 import * as karma from './karma.js';
@@ -746,7 +746,12 @@ api.post('/apps', async (c) => {
     })}
     returning slug`;
   const fresh = await getApp(row.slug, { includeDrafts: true });
-  return c.json({ app: { ...shape(fresh), verify_token: token }, verify: verifyHelp(fresh) }, 201);
+  const verify = verifyHelp(fresh);
+  // Confirmation to the submitter: what to do next, plus the network block. Never blocks the response.
+  sendAppSubmitted({ email: user.email, name: fresh.name, slug: fresh.slug, verified: verify.verified, verify }).catch((err) =>
+    console.error(`[mail] app submitted ${fresh.slug}: ${err.message}`),
+  );
+  return c.json({ app: { ...shape(fresh), verify_token: token }, verify }, 201);
 });
 
 function guessCategory(cats = []) {
@@ -857,6 +862,8 @@ api.post('/apps/:slug/:action{publish|unlist|unpublish}', async (c) => {
              where id = ${row.id}`;
   // +10 the first time a listing goes live (the ledger pays once per app; staff earn nothing).
   const paid = status === 'published' && !row.published_at ? await karma.award({ userId: user.id, action: 'publish', ref: row.id, appId: row.id }) : null;
+  if (status === 'published' && !row.published_at)
+    sendAppPublished({ email: user.email, name: row.name, slug: row.slug }).catch((err) => console.error(`[mail] app published ${row.slug}: ${err.message}`));
   return c.json({ ok: true, status, ...(paid && { karma: paid }) });
 });
 

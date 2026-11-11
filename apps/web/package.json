@@ -11,6 +11,7 @@
     "@profullstack/affiliates": "0.3.0",
     "@profullstack/ai-providers": "0.1.2",
     "@profullstack/auth-system": "^0.8.3",
+    "@profullstack/cross-promo": "^0.1.0",
     "@profullstack/footer": "latest",
     "@profullstack/leaderboard": "^0.3.1",
     "@profullstack/notifications": "^0.1.4",
