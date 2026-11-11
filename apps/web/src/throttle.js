@@ -37,7 +37,7 @@ let built = null;
 function build() {
   const apiKey = process.env.COINPAY_X402_KEY;
   const gateway = apiKey
-    ? createGateway({ siteUrl: config.siteUrl, coinpay: { apiKey }, payTo: process.env.CRAWL_PAY_TO, openPaths: ['/i/'] })
+    ? createGateway({ siteUrl: config.siteUrl, coinpay: { apiKey }, payTo: process.env.CRAWL_PAY_TO, openPaths: ['/i/', '/privacy', '/terms'] })
     : null;
   const throttle = createThrottle({
     gateway,
