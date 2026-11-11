@@ -13,6 +13,8 @@ export const PROTOCOL_VERSION = '2025-06-18';
 export const TOOLS = [
   {
     name: 'search_apps',
+    title: 'Search Apps',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Search the pwamart catalog of installable web apps (PWAs). Returns name, slug, summary, publisher, rating, installs and the URL to open.',
     inputSchema: {
       type: 'object',
@@ -30,26 +32,36 @@ export const TOOLS = [
   },
   {
     name: 'get_app',
+    title: 'Get App',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Full details of one app by slug: description, screenshots, installability checks, publisher and install instructions for every platform.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'list_collections',
+    title: 'List Collections',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Collections of apps for agentic workflows (coding, payments, ops, growth, research, talking to humans; every MCP server, CLI or API). Each has one command that installs every CLI in it and one MCP config for every server.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'get_collection',
+    title: 'Get Collection',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: "One collection's apps, with each app's surfaces (CLI install command, MCP endpoint, API base) and the collection's one-command installs.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'list_categories',
+    title: 'List Categories',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Every category with how many apps it has.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'install_app',
+    title: 'How to Install App',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description:
       'How to install an app on a given platform, plus the URL to open. An agent with a shell can run the returned command; otherwise show the steps to the user.',
     inputSchema: {
@@ -64,6 +76,8 @@ export const TOOLS = [
   },
   {
     name: 'submit_app',
+    title: 'Submit App',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     description: 'List a PWA: inspects the URL and creates a draft under one of your publishers. Needs PWAMART_API_KEY (Bearer pm_live_...).',
     inputSchema: {
       type: 'object',
@@ -79,11 +93,15 @@ export const TOOLS = [
   },
   {
     name: 'verify_app',
+    title: 'Verify App Domain',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description: 'Check the domain-ownership token for a draft app. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'fill_publisher',
+    title: 'Fill Publisher Profile',
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     description:
       'Read a website and suggest a publisher name, logo and bio (from its manifest and page; the bio is written by AI only when the site has no description). Saves only when save is true. Needs an API key.',
     inputSchema: {
@@ -95,16 +113,22 @@ export const TOOLS = [
   },
   {
     name: 'verify_publisher',
+    title: 'Verify Publisher',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description: 'Prove the publisher runs its website (manifest token, /.well-known file, meta tag or DNS TXT). Without the token in place, returns how to add it. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'publish_app',
+    title: 'Publish App',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Publish a verified, installable app to the store. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'feature_app',
+    title: 'Feature App',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     description:
       'Get a published app featured for $19: 7 days on the pwamart home page and a slot in the next newsletter. Returns a CoinPay crypto checkout URL for a human to pay; with credit: true it spends a free Featured week earned with karma instead (no payment). Needs an API key.',
     inputSchema: {
@@ -116,6 +140,8 @@ export const TOOLS = [
   },
   {
     name: 'get_badge',
+    title: 'Get Badge',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description:
       'The live "Get it on pwamart" badge (rating + installs) for a listing, as HTML and Markdown snippets to paste on the app\'s site, plus whether its homepage links back (the ✓ and a followed link). Pass slug, or site (a homepage URL) to find which listing a site is.',
     inputSchema: {
@@ -126,16 +152,22 @@ export const TOOLS = [
   },
   {
     name: 'check_badge',
+    title: 'Check Badge Link',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description: "Re-check the app's homepage for a link back to its pwamart listing now (the badge). Verified earns the ✓ and a followed link. Needs an API key for an app you publish.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'get_releases',
+    title: 'Get Releases',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: "What's new in an app: its releases (published by the developer or detected from manifest changes), newest first.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'follow',
+    title: 'Follow App or Publisher',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Get notified when an app updates, or when a publisher ships a new app or update. Needs an API key or `pwamart login` (or pass an email for a confirmation link).',
     inputSchema: {
       type: 'object',
@@ -146,26 +178,36 @@ export const TOOLS = [
   },
   {
     name: 'redeem_credit_code',
+    title: 'Redeem Credit Code',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     description: 'Redeem a pwamart credit code (PM-XXXX-XXXX-XXXX-XXXX) for days of the Pro plan, added after any time the account already has. Each code works once per account. Needs an API key or `pwamart login`.',
     inputSchema: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'], additionalProperties: false },
   },
   {
     name: 'my_invites',
+    title: 'My Invites',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Your pwamart invites: how many are left, each one\'s state, how many were accepted, and your open ?ref= link. Needs an API key.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'create_invite',
+    title: 'Create Invite',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     description: 'Make a single-use pwamart invite link for a new account (3 per account, 30 days). When the invitee confirms their account, both of you get Pro days. The link is returned once. Needs an API key.',
     inputSchema: { type: 'object', properties: { note: { type: 'string', description: 'who it is for (only you see it)' } }, additionalProperties: false },
   },
   {
     name: 'my_karma',
+    title: 'My Karma',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Your pwamart karma: total, this week, rank, badges, free Featured week credits, karma to the next one, recent history and how to earn more. Needs an API key or `pwamart login`.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'history rows' } }, additionalProperties: false },
   },
   {
     name: 'leaderboard',
+    title: 'Karma Leaderboard',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'The public karma leaderboard: members ranked by karma earned upvoting, reviewing, commenting on, sharing and publishing apps. Falls back to all time when the period is empty.',
     inputSchema: {
       type: 'object',
@@ -175,11 +217,15 @@ export const TOOLS = [
   },
   {
     name: 'upvote_app',
+    title: 'Upvote App',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: 'Upvote an app (one per member per app; earns +1 karma, +1 to its owner, not on your own apps). remove: true takes the vote back. Needs an API key.',
     inputSchema: { type: 'object', properties: { slug: { type: 'string' }, remove: { type: 'boolean' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'review_app',
+    title: 'Review App',
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     description: 'Rate an app 1 to 5 with an optional review (30+ characters earns 5 karma, once per app, not your own). Posting again updates your review. Needs an API key.',
     inputSchema: {
       type: 'object',
@@ -190,6 +236,8 @@ export const TOOLS = [
   },
   {
     name: 'comment',
+    title: 'Comment on App',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     description: "Comment on an app's page, or reply to a comment (parent = its id; one level). 10+ characters earns 2 karma (up to 10 a day). Rate limited. Needs an API key.",
     inputSchema: {
       type: 'object',
@@ -200,11 +248,15 @@ export const TOOLS = [
   },
   {
     name: 'list_comments',
+    title: 'List Comments',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     description: "An app's comments with their replies, each author's name and karma.",
     inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'], additionalProperties: false },
   },
   {
     name: 'subscribe_newsletter',
+    title: 'Subscribe to Newsletter',
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description: 'Subscribe an email address to the pwamart newsletter. A confirmation email is sent; nothing else is until it is tapped.',
     inputSchema: { type: 'object', properties: { email: { type: 'string' } }, required: ['email'], additionalProperties: false },
   },
