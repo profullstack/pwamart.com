@@ -21,6 +21,8 @@ const OPTIONS = {
     { label: 'Newsletter', href: '/newsletter' },
     { label: 'llms.txt', href: '/llms.txt' },
     { label: 'PwaMart on GitHub', href: 'https://github.com/profullstack/pwamart.com', rel: 'noopener noreferrer' },
+    { label: 'Privacy', href: '/privacy' },
+    { label: 'Terms', href: '/terms' },
   ],
   pwamartHref: 'https://pwamart.com/for?site=https://pwamart.com/',
   builtIndieHref: 'https://built.indie.pit.world/for?site=https://pwamart.com/',

@@ -429,3 +429,8 @@ pre.code { margin: 6px 0 0; padding: 12px 14px; border-radius: 12px; background:
   .profile-rank { grid-template-columns: 1fr auto; gap: 8px; }
   .profile-rank small { grid-column: 1 / -1; }
 }
+
+/* /privacy and /terms */
+.legal h2 { margin: 28px 0 10px; font-size: 20px; }
+.legal p, .legal li { line-height: 1.65; }
+.legal ul { padding-left: 1.2rem; }

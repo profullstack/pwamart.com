@@ -19,6 +19,7 @@ import { COLLECTIONS, SECTIONS, allCollections, collectionApps, getCollection, i
 import { surfaceKey } from './surfaces.js';
 import { refreshFooter } from './footer.js';
 import { trafficGuard } from './throttle.js';
+import { privacyPage, termsPage } from './legal.js';
 import { appBadgeRow, appBySite, badgeSvg, listBadgeSvg, PWAMART_OPENICON_URL, theme as badgeTheme } from './badge.js';
 import { networkStats } from './crawlproof.js';
 import * as newsletter from './newsletter.js';
@@ -267,6 +268,8 @@ app.use('/leaderboard/*', async (c, next) => leaderboardMiddleware(karma.leaderb
 
 app.get('/pricing', async (c) => html(c, pricingPage({ stats: await stats(), net: networkStats() })));
 app.get('/developers', async (c) => html(c, developersPage({ stats: await stats() })));
+app.get('/privacy', (c) => html(c, privacyPage()));
+app.get('/terms', (c) => html(c, termsPage()));
 
 /* -------------------------------------------------- featured + newsletter -- */
 
@@ -685,6 +688,8 @@ app.get('/sitemap.xml', async (c) => {
     u('/publishers'),
     u('/leaderboard'),
     u('/newsletter'),
+    u('/privacy'),
+    u('/terms'),
     ...CATEGORIES.map(([k]) => u(`/apps?category=${k}`)),
     u('/apps?feature=offline'),
     u('/collections'),
