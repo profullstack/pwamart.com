@@ -13,6 +13,7 @@
         "@profullstack/affiliates": "0.3.0",
         "@profullstack/ai-providers": "0.1.2",
         "@profullstack/auth-system": "^0.8.3",
+        "@profullstack/cross-promo": "^0.1.0",
         "@profullstack/footer": "latest",
         "@profullstack/leaderboard": "^0.3.1",
         "@profullstack/notifications": "^0.1.4",
@@ -110,6 +111,8 @@
     "@profullstack/ai-providers": ["@profullstack/ai-providers@0.1.2", "", { "bin": { "ai-providers": "src/cli.js" } }, "sha512-nOcKaOhfcDM+RNruA4+znva5xXxI4HF77iqUCgieuou2w8yY8LIF2p5ajSVD4kzFtfIUjC7GhGV8eyOrliHg1w=="],
 
     "@profullstack/auth-system": ["@profullstack/auth-system@0.8.3", "", { "dependencies": { "bcryptjs": "^2.4.3", "jsonwebtoken": "^9.0.2", "uuid": "^11.1.0" }, "peerDependencies": { "@supabase/supabase-js": "^2.49.4", "mongodb": "^6.5.0", "mysql2": "^3.9.2", "pg": "^8.11.3", "pocketbase": "^0.21.1" }, "optionalPeers": ["@supabase/supabase-js", "mongodb", "mysql2", "pg", "pocketbase"] }, "sha512-goafDEaq8XDDCChfAfi8wvUxn1xMeGWXpr7XEH9czFU/eIq9PkehGRTy3d/YP2BGzO1iIxrTAb2m2eOMTMdYUA=="],
+
+    "@profullstack/cross-promo": ["@profullstack/cross-promo@0.1.0", "", { "bin": { "cross-promo": "bin/cross-promo.js" } }, "sha512-LQMxZSvApH1T+8WmMu/Nj1LqojXeTw6wAtpLfhuKFwx9eR36hQG/7vVIDkKpmU5zKw7UwARe20MOfFCak2+ejA=="],
 
     "@profullstack/emailer": ["@profullstack/emailer@1.0.3", "", {}, "sha512-VyAtCcfnSI6LOwJvWogCr3ZNmEsaZw+iuWrqnosLsdcKsbRyCrCmXigMNZJZEjlgYlR+lK//PwNPG+xtCFvWAw=="],
 
