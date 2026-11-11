@@ -63,12 +63,14 @@ ${noindex ? '<meta name="robots" content="noindex">' : ''}
 <link rel="alternate" type="application/rss+xml" title="pwamart: new apps" href="/feed.xml">
 <link rel="alternate" type="application/rss+xml" title="pwamart: app updates" href="/releases.xml">
 <script data-site="${e(config.crawlproof.site)}" src="https://crawlproof.com/stats.js" async></script>
+<!-- WebMCP (@profullstack/webmcp): site tools, the /mcp catalog tools and the search/newsletter forms for the AI agent in the visitor's browser. -->
+<script type="module" data-webmcp src="https://cdn.jsdelivr.net/npm/@profullstack/webmcp@0/src/embed.js" data-mcp="/mcp" data-search-api="/api/v1/apps?q={query}&amp;limit={limit}" data-search="/apps?q={query}" data-pages='{"apps":"/apps","publishers":"/publishers","newsletter":"/newsletter"}'></script>
 ${head}
 </head>
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="/" aria-label="pwamart home">${MARK}<span>pwamart<b>.</b></span></a>
-  <form class="search" action="/apps" role="search">${SEARCH_ICON}<input name="q" type="search" placeholder="Search web apps" aria-label="Search web apps" autocomplete="off"></form>
+  <form class="search" action="/apps" role="search" toolname="search_apps_page" tooldescription="Search the pwamart web app store and show the results page" toolautosubmit>${SEARCH_ICON}<input name="q" type="search" placeholder="Search web apps" aria-label="Search web apps" autocomplete="off"></form>
   <nav class="nav">
     <a href="/apps">Browse</a>
     <a href="/collections">Collections</a>
@@ -970,7 +972,7 @@ export function invitePage({ code, state, signedIn = false, days = 30 }) {
 
 /* -------------------------------------------------- featured + newsletter -- */
 
-const subscribeForm = (source) => `<form method="post" action="/newsletter" style="max-width:520px;margin:18px 0 0;display:flex;gap:8px;flex-wrap:wrap">
+const subscribeForm = (source) => `<form method="post" action="/newsletter" toolname="subscribe_newsletter" tooldescription="Fill in an email to subscribe to the pwamart newsletter; the person presses Subscribe" style="max-width:520px;margin:18px 0 0;display:flex;gap:8px;flex-wrap:wrap">
     <input type="hidden" name="source" value="${e(source)}">
     <input name="email" type="email" required placeholder="you@example.com" aria-label="Email address" autocomplete="email" style="flex:1;min-width:220px;padding:12px 14px;border-radius:12px;border:1px solid rgba(127,127,127,.35);font:inherit;background:transparent;color:inherit">
     <button class="btn primary" type="submit">Subscribe</button>
