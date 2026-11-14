@@ -22,7 +22,7 @@
         "@profullstack/redeem-credits": "0.2.0",
         "@profullstack/stack": "^0.5.0",
         "@profullstack/throttle": "^0.4.0",
-        "@profullstack/x402-gateway": "^0.13.1",
+        "@profullstack/x402-gateway": "^0.18.0",
         "@pwamart/db": "workspace:*",
         "@pwamart/payments": "workspace:*",
         "@simplewebauthn/browser": "^14.0.0",
@@ -146,7 +146,7 @@
 
     "@profullstack/throttle": ["@profullstack/throttle@0.4.0", "", { "dependencies": { "@profullstack/x402-gateway": "^0.6.0 || ^0.7.0 || ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0" } }, "sha512-Lj+XHt51OxyaJ2FqosZDyr9Z5RFB8z+ARixpoUfrDu3YlvFlct5GbbZM/C0qLZkUgzeuFSDvtYt9f0NNfBkFqA=="],
 
-    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.13.1", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-V7liSO0tShZRlp8dancuDuUSF/rqrr5YF3bzLoZy9wn6ixf1RIRPYTepe72s36JOdSVzi3wfuhaZFm9y0RpV4w=="],
+    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.18.0", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-+vORJd17QpLycouk0wrmyOlnyv+6Q9Ttxk+iglsMH2pZpejTUD2Ak3ysKxQsb94R4m1GLSEv8DHoCS49Nf4/0A=="],
 
     "@pwamart/db": ["@pwamart/db@workspace:packages/db"],
 
@@ -221,6 +221,8 @@
     "uuid": ["uuid@11.1.1", "", { "bin": { "uuid": "dist/esm/bin/uuid" } }, "sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ=="],
 
     "@profullstack/pwamart-mcp/@profullstack/pwamart": ["@profullstack/pwamart@0.10.1", "", { "dependencies": { "@profullstack/auth-system": "^0.8.3", "@profullstack/hqtui": "^0.11.1" }, "bin": { "pwamart": "bin/pwamart.mjs" } }, "sha512-gSm4ry+JNIrZC4Lh7out9sYIEUxrZdaxB3PbhyiIYpdcg/zcixJPEbr4Nwb1PXKyRYZZqXCMMVaeqhu2hh3y/g=="],
+
+    "@profullstack/throttle/@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.13.1", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-V7liSO0tShZRlp8dancuDuUSF/rqrr5YF3bzLoZy9wn6ixf1RIRPYTepe72s36JOdSVzi3wfuhaZFm9y0RpV4w=="],
 
     "tsyringe/tslib": ["tslib@1.14.1", "", {}, "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg=="],
   }
