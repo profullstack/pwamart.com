@@ -1,6 +1,7 @@
 import { configured, db } from '@pwamart/db';
 import { migrate } from '@pwamart/db/migrate';
 import { configurePayments } from '@pwamart/payments';
+import { COINPAY_UA } from './coinpay-ua.js';
 import { app } from './app.js';
 import { config } from './config.js';
 
@@ -13,7 +14,7 @@ if (process.env.NODE_ENV === 'production' && !configured())
 if (configured()) {
   await migrate();
   // The coinpay object goes in whole: its getters read the environment on each access.
-  configurePayments({ sql: db(), coinpay: config.coinpay, siteUrl: config.siteUrl });
+  configurePayments({ sql: db(), coinpay: config.coinpay, siteUrl: config.siteUrl, userAgent: COINPAY_UA });
   // Renewal reminders, claim checks, the saasrow import: see daemon.js.
   if (process.env.PWAMART_DAEMON !== 'off') (await import('./daemon.js')).startDaemon();
 }

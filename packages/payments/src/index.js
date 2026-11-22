@@ -47,7 +47,7 @@ let deps = null;
  * `property` is the site hostname CoinPay files every payment under. Omitted, it is
  * `coinpay.property` when the config carries one, else the hostname of `siteUrl`.
  *
- * @param {{sql: Function, coinpay: object, siteUrl: string, property?: string}} injected
+ * @param {{sql: Function, coinpay: object, siteUrl: string, property?: string, userAgent?: string}} injected
  */
 export function configurePayments(injected) {
   deps = injected;
@@ -86,6 +86,12 @@ function hostOf(value) {
   } catch {
     return v.toLowerCase();
   }
+}
+
+/** The app's User-Agent for CoinPay (`userAgent` passed to configurePayments), when given. */
+function uaHeader() {
+  const ua = deps?.userAgent;
+  return ua ? { 'user-agent': String(ua) } : {};
 }
 
 function baseUrlOf(coinpay) {
@@ -192,6 +198,7 @@ export async function createCheckout({
     method: 'POST',
     headers: {
       authorization: `Bearer ${coinpay.apiKey}`,
+      ...uaHeader(),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -222,6 +229,7 @@ export async function createCheckout({
       method: 'POST',
       headers: {
         authorization: `Bearer ${coinpay.apiKey}`,
+        ...uaHeader(),
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -297,7 +305,7 @@ export async function getCheckoutSession(sessionId) {
   const { coinpay } = need();
   if (!/^cs_[A-Za-z0-9]+$/.test(String(sessionId ?? ''))) return null;
   const res = await fetch(`${baseUrlOf(coinpay)}/api/checkout/sessions/${sessionId}`, {
-    headers: { authorization: `Bearer ${coinpay.apiKey}` },
+    headers: { authorization: `Bearer ${coinpay.apiKey}`, ...uaHeader() },
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) return null;
