@@ -29,6 +29,8 @@ import { leaderboard as leaderboardMiddleware } from '@profullstack/leaderboard/
 import { saveSignupProfile } from '@profullstack/profile';
 import { PROFILE_ENHANCE_SCRIPT, profileTemplate, profiles } from './user-profile.js';
 import * as credits from './credits.js';
+import * as outreach from './outreach.js';
+import { e as escapeHtml } from './pages.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUB = join(here, '..', 'public');
@@ -640,6 +642,24 @@ app.get('/apps/:slug/releases', async (c) => {
 
 const notice = (c, title, body, status = 200) =>
   c.html(layout({ title, noindex: true, body: `<div class="wrap"><section class="block" style="padding:70px 0;max-width:620px"><div class="eyebrow">pwamart</div><h1 style="margin:10px 0 14px;font-size:40px">${title}</h1><p class="lede">${body}</p><a class="btn" href="/">Back to the store</a></section></div>` }), status);
+
+// The weekly outreach digest's opt-out. GET asks (link scanners prefetch GETs);
+// POST opts out, and is also the RFC 8058 one-click target mail clients call.
+app.get('/outreach/unsubscribe', async (c) => {
+  const t = c.req.query('t') ?? '';
+  const r = await outreach.recipientByToken(t);
+  if (!r) return notice(c, 'That link is not valid.', 'Nothing was changed.', 404);
+  if (r.opted_out_at) return notice(c, 'You are unsubscribed.', `${escapeHtml(r.email)} gets no more pwamart reminders.`);
+  return notice(
+    c,
+    'Stop pwamart reminders?',
+    `${escapeHtml(r.email)} gets at most one email a week about its listings.</p><form method="post" action="/outreach/unsubscribe?t=${encodeURIComponent(t)}" style="margin:18px 0"><button class="btn primary" type="submit">Unsubscribe</button></form><p class="muted">`,
+  );
+});
+app.post('/outreach/unsubscribe', async (c) => {
+  const r = await outreach.unsubscribe(c.req.query('t') ?? '');
+  return r ? notice(c, 'You are unsubscribed.', `${escapeHtml(r.email)} gets no more pwamart reminders.`) : notice(c, 'That link is not valid.', 'Nothing was changed.', 404);
+});
 
 app.get('/follow/confirm', async (c) => {
   const [f] = await db()`update follows set confirmed_at = coalesce(confirmed_at, now()) where token = ${c.req.query('t') ?? ''} returning target_kind`;
