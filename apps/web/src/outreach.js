@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { promoBlock } from '@profullstack/cross-promo';
 import { db } from '@pwamart/db';
 import { config } from './config.js';
 import { send } from './mail.js';
@@ -61,6 +62,7 @@ export function excluded(email, { adminEmails = config.adminEmails, domains = ou
   const e = String(email ?? '').toLowerCase().trim();
   if (!e.includes('@')) return true;
   if (e === 'unclaimed@pwamart.com' || adminEmails.includes(e)) return true;
+  if (/@coinpay\./.test(e)) return true; // CoinPay-only accounts carry a placeholder nobody reads
   const host = e.split('@')[1];
   return domains.some((d) => host === d || host.endsWith(`.${d}`));
 }
@@ -144,7 +146,7 @@ export function ownerSection(o, siteUrl) {
 }
 
 /** One email from whatever sections apply; null when nothing actionable remains. */
-export function composeDigest({ claim, owner, siteUrl, unsubUrl, postal = '' }) {
+export function composeDigest({ claim, owner, siteUrl, unsubUrl, postal = '', promo = '' }) {
   const sections = [];
   const kinds = [];
   let subject = null;
@@ -165,7 +167,7 @@ export function composeDigest({ claim, owner, siteUrl, unsubUrl, postal = '' }) 
   if (!kinds.some((k) => ACTIONABLE.includes(k))) return null;
   const why = claim?.length && !owner ? 'your site was submitted to saasrow.com with this address' : 'you publish apps on pwamart';
   const footer = `--\nYou get at most one of these a week because ${why}.\nStop them: ${unsubUrl}${postal ? `\n${postal}` : ''}`;
-  return { subject, text: `Hi,\n\n${sections.join('\n\n')}\n\n${footer}\n`, kinds };
+  return { subject, text: `Hi,\n\n${sections.join('\n\n')}\n\n${promo ? `${promo}\n\n` : ''}${footer}\n`, kinds };
 }
 
 /** Drop nudges that already hit their cap for this address. */
@@ -327,7 +329,11 @@ export async function runOutreach({ sql = db(), batch = outreachConfig.batch, dr
     const capped = applyCaps({ claim: claims.get(email), owner: owners.get(email) }, counts.get(email));
     const { token } = dry ? { token: 'dry-run' } : await tokenFor(email, sql);
     const unsub = unsubscribeUrl(token);
-    const msg = composeDigest({ ...capped, siteUrl, unsubUrl: unsub, postal: outreachConfig.postal });
+    // The network block (@profullstack/cross-promo), as on every pwamart email; never throws.
+    const promo = await promoBlock({ site: 'pwamart.com', audience: 'makers', seed: email })
+      .then((p) => p.text ?? '')
+      .catch(() => '');
+    const msg = composeDigest({ ...capped, siteUrl, unsubUrl: unsub, postal: outreachConfig.postal, promo });
     if (!msg) {
       tally.skipped++;
       continue;

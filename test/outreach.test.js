@@ -100,6 +100,13 @@ describe('outreach: compose', () => {
     expect(o.excluded('a@notprofullstack.com', opts)).toBe(false);
     expect(o.excluded('nope', opts)).toBe(true);
     expect(o.excluded('Dev@Acme.io', opts)).toBe(false);
+    expect(o.excluded('u123@coinpay.pwamart.com', { adminEmails: [], domains: [] })).toBe(true);
+  });
+
+  test('the network block sits above the unsubscribe footer', () => {
+    const m = o.composeDigest({ claim: [{ slug: 'a', name: 'A', domain: 'a.io', apps: [] }], siteUrl: SITE, unsubUrl: 'UNSUB', promo: 'PROMO' });
+    expect(m.text.indexOf('PROMO')).toBeGreaterThan(m.text.indexOf('/console/claim/a'));
+    expect(m.text.indexOf('PROMO')).toBeLessThan(m.text.indexOf('UNSUB'));
   });
 });
 
@@ -125,8 +132,10 @@ d('outreach end to end', () => {
     orgs = dbm.orgs;
     sql = db();
     await (await import('../packages/db/src/migrate.js')).migrate({ log: () => {} });
-    const { houseOrg } = await import('../apps/web/src/imports.js');
-    const house = await houseOrg(sql);
+    // Its own stand-in for the house org: imports.js caches houseOrg()'s id per process,
+    // and api.test.js recreates the schema after this file runs, so never warm that cache.
+    const [hu] = await sql`insert into users (email) values (${`house-${run}@acme.test`}) returning id`;
+    const { id: house } = await orgs.ensurePersonalOrg(sql, { userId: hu.id });
     // An unclaimed import with one published app, and its saasrow contact.
     const [pub] = await sql`
       insert into publishers (org_id, slug, name, website, claimable, claim_domain, source, source_ref)
@@ -145,7 +154,7 @@ d('outreach end to end', () => {
   afterAll(async () => {
     if (!sql) return;
     await sql`delete from publishers where slug in (${`acme-${run}`}, ${`own-${run}`})`;
-    await sql`delete from users where email = ${ownerEmail}`;
+    await sql`delete from users where email in (${ownerEmail}, ${`house-${run}@acme.test`})`;
     await sql`delete from outreach_sends where email in (${claimant}, ${ownerEmail})`;
     await sql`delete from outreach_recipients where email in (${claimant}, ${ownerEmail})`;
   });
