@@ -8,6 +8,7 @@ import {
   getCoinPayAuthorizeUrl,
   validateCoinPayState,
 } from '@profullstack/stack/coinpay';
+import { coinpayFetch } from './coinpay-ua.js';
 import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { grantPass, passFromClaims } from './billing.js';
@@ -35,7 +36,7 @@ export const placeholderEmail = (sub) => `${String(sub).replace(/[^a-z0-9]/gi, '
 
 const COOKIE = 'pm_cp';
 const SCOPES = 'openid profile email did';
-let fetchImpl = fetch;
+let fetchImpl = coinpayFetch;
 /** Tests swap CoinPay for a fake. */
 export const setCoinPayFetch = (f) => {
   fetchImpl = f;

@@ -22,7 +22,7 @@
         "@profullstack/redeem-credits": "0.2.0",
         "@profullstack/stack": "^0.5.0",
         "@profullstack/throttle": "^0.4.2",
-        "@profullstack/x402-gateway": "^0.18.1",
+        "@profullstack/x402-gateway": "^0.18.2",
         "@pwamart/db": "workspace:*",
         "@pwamart/payments": "workspace:*",
         "@simplewebauthn/browser": "^14.0.0",
@@ -146,7 +146,7 @@
 
     "@profullstack/throttle": ["@profullstack/throttle@0.4.2", "", { "dependencies": { "@profullstack/x402-gateway": "^0.6.0 || ^0.7.0 || ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0" } }, "sha512-2ibd5rirK5HyqYtk+XsiORpcSLHWMVCgHX+ZdED7uPkIW7iMJi1mjth3Ly1cQcpJhHWE6uyDaIIirRaeTl7/sw=="],
 
-    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.18.1", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-zc2JGLXMX8eCk7Mp4X91E175enOTNcWPZncKf3LXzoGE+XEhHDJHM1LRZkkY3x2pjLYX3AB11Vx/TP3cobSQ/g=="],
+    "@profullstack/x402-gateway": ["@profullstack/x402-gateway@0.18.2", "", { "dependencies": { "@profullstack/keys": "^0.1.0" } }, "sha512-PM0S2ADXPKPvPLLlWVbEqMq+EhKxiNxg1wp0jeGf9S5tz2ZGaNIFqun69cO5lJGZgfh03ST4UkJZGr8CmvCWyg=="],
 
     "@pwamart/db": ["@pwamart/db@workspace:packages/db"],
 
