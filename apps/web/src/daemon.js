@@ -259,3 +259,15 @@ addJob('featured-expiry', 10 * 60_000, () => expireFeatured());
 addJob('featured-ads', 2 * 60_000, () => syncFeaturedAds());
 // A queued issue goes out 50 subscribers a minute, each delivery claimed before it is sent.
 addJob('newsletter-send', 60_000, () => sendBatch());
+
+/* -------------------------------------------------------------- outreach -- */
+
+// The weekly digest (outreach.js): claim reminders to unclaimed publishers, and badge /
+// drafts / profile / karma-credit / comment nudges to owners. Hourly turns, a batch
+// each, every address at most once a week. OUTREACH=off stops it, =dry only logs.
+addJob('outreach', 60 * 60_000, async () => {
+  const { outreachConfig, runOutreach } = await import('./outreach.js');
+  if (outreachConfig.mode === 'off') return;
+  const r = await runOutreach();
+  if (r.sent || r.failed) console.log(`[daemon] outreach ${JSON.stringify(r)}`);
+});
