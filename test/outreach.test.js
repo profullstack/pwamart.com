@@ -194,6 +194,21 @@ d('outreach end to end', () => {
     expect(mine().map((m) => m.to)).toEqual([ownerEmail]);
   });
 
+  test('a 429 from Resend is retried once, then the digest is recorded', async () => {
+    await sql`update outreach_sends set sent_at = now() - interval '8 days' where email = ${ownerEmail}`;
+    let calls = 0;
+    const flaky = async (m) => {
+      if (m.to !== ownerEmail) return true;
+      calls++;
+      if (calls === 1) throw new Error('resend 429: too many requests');
+      return true;
+    };
+    await o.runOutreach({ sql, batch: 10_000, dry: false, sendFn: flaky, siteUrl: SITE, pauseMs: 0, retryMs: 1 });
+    expect(calls).toBe(2);
+    const [{ n }] = await sql`select count(*)::int as n from outreach_sends where email = ${ownerEmail} and sent_at > now() - interval '1 minute'`;
+    expect(n).toBe(1);
+  });
+
   test('a claimed publisher drops out of the claim campaign', async () => {
     await sql`update publishers set claimable = false where slug = ${`acme-${run}`}`;
     const t = await o.claimTargets(sql);
