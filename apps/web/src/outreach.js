@@ -310,7 +310,17 @@ export async function recipientByToken(token, sql = db()) {
  * One daemon turn: up to `batch` addresses that are due (no digest in GAP_HOURS, not
  * opted out), owners first. Returns a tally; with dry, logs instead of sending.
  */
-export async function runOutreach({ sql = db(), batch = outreachConfig.batch, dry = outreachConfig.mode === 'dry', sendFn = send, siteUrl = config.siteUrl } = {}) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function runOutreach({
+  sql = db(),
+  batch = outreachConfig.batch,
+  dry = outreachConfig.mode === 'dry',
+  sendFn = send,
+  siteUrl = config.siteUrl,
+  pauseMs = Number(env('OUTREACH_PAUSE_MS', '300')),
+  retryMs = 3000,
+} = {}) {
   const [claims, owners] = await Promise.all([claimTargets(sql), ownerTargets(sql)]);
   const recent = new Set(
     (await sql`select distinct email from outreach_sends where sent_at > now() - make_interval(hours => ${GAP_HOURS})`).map((r) => r.email),
@@ -341,13 +351,21 @@ export async function runOutreach({ sql = db(), batch = outreachConfig.batch, dr
     if (dry) {
       console.log(`[outreach] (dry) to=${email} kinds=${msg.kinds.join(',')} subject=${msg.subject}`);
     } else {
+      const mail = {
+        to: email,
+        subject: msg.subject,
+        text: msg.text,
+        replyTo: outreachConfig.replyTo || undefined,
+        headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+      };
+      // Resend allows 10 requests/s for the whole account (every fleet site shares it):
+      // pace the batch, and give a 429 one more try after a pause.
+      if (tally.sent && pauseMs) await sleep(pauseMs);
       try {
-        await sendFn({
-          to: email,
-          subject: msg.subject,
-          text: msg.text,
-          replyTo: outreachConfig.replyTo || undefined,
-          headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+        await sendFn(mail).catch(async (err) => {
+          if (!/\b429\b/.test(String(err?.message))) throw err;
+          await sleep(retryMs);
+          return sendFn(mail);
         });
       } catch (err) {
         tally.failed++;
