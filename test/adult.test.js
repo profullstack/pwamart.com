@@ -104,6 +104,10 @@ d('adult category', () => {
   afterAll(async () => {
     for (const s of [pwa, plain, third]) s?.stop(true);
     inspectMod?.setAllowLocal(false);
+    // api.test.js recreates the schema: a pooled connection kept from here would carry
+    // prepared statements for tables that no longer exist ("cached plan must not change
+    // result type"). Close the pool so the next file starts on fresh connections.
+    await (await import('../packages/db/src/index.js')).close();
   });
 
   /* ------------------------------------------------------------ seeding -- */
