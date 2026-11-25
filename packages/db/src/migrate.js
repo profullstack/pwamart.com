@@ -14,7 +14,12 @@ const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'migr
  */
 export async function migrate({ log = console.log } = {}) {
   const sql = db();
-  await sql`select pg_advisory_lock(7351777)`;
+  // A session lock belongs to one connection: take and release it on the same
+  // reserved one. Through the pool, the unlock could land on another connection
+  // and leave the lock held until the process exits, so a later migrate() (a
+  // second container, the next test file) would wait on it for ever.
+  const lock = await sql.reserve();
+  await lock`select pg_advisory_lock(7351777)`;
   try {
     await migrateOrgs(sql);
     await sql`
@@ -38,6 +43,7 @@ export async function migrate({ log = console.log } = {}) {
     log(ran ? `[migrate] applied ${ran} migration(s)` : '[migrate] up to date');
     return ran;
   } finally {
-    await sql`select pg_advisory_unlock(7351777)`;
+    await lock`select pg_advisory_unlock(7351777)`.catch(() => {});
+    lock.release();
   }
 }

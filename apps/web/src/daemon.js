@@ -1,6 +1,6 @@
 import { db } from '@pwamart/db';
 import { dueReminders, markReminded } from './billing.js';
-import { config } from './config.js';
+import { ADULT, config } from './config.js';
 import { sendRenewalReminder } from './mail.js';
 import { expireFeatured, sendBatch, syncFeaturedAds } from './newsletter.js';
 
@@ -120,12 +120,12 @@ addJob('saasrow-import', 20 * 60_000, async () => {
  * a minute or so each. A failure is recorded and retried after a day, never in a
  * tight loop. Running it twice is safe: CrawlProof hands back the live campaign.
  */
-export async function runListingAds({ batch = 4, createCampaign } = {}) {
+export async function runListingAds({ batch = 4, createCampaign, setStatus } = {}) {
   if (!config.crawlproof.apiToken && !createCampaign) return { created: 0, skipped: 'no CRAWLPROOF_API_TOKEN' };
   const make = createCampaign ?? (await import('./crawlproof.js')).createCampaign;
   const due = await db()`
     select id, slug, name from apps
-    where status = 'published' and listing_ad_id is null
+    where status = 'published' and listing_ad_id is null and category <> ${ADULT}
       and (listing_ad_error is null or listing_ad_at < now() - interval '1 day')
     order by featured desc, published_at limit ${batch}`;
   let created = 0;
@@ -138,7 +138,43 @@ export async function runListingAds({ batch = 4, createCampaign } = {}) {
       await db()`update apps set listing_ad_at = now(), listing_ad_error = ${String(err.message).slice(0, 300)} where id = ${a.id}`;
     }
   }
-  return { created, due: due.length };
+  return { created, due: due.length, ...(await syncAdultListingAds({ setStatus })) };
+}
+
+const ADULT_AD_PAUSED = 'paused: adult category';
+
+/**
+ * Adult (18+) listings never advertise on the network. One that already had a
+ * campaign when it was moved into the category has it paused; moved back out, it
+ * is resumed. The marker lives in listing_ad_error, so a failed call is retried on
+ * the next turn and a paused campaign is never mistaken for a missing one.
+ */
+export async function syncAdultListingAds({ setStatus } = {}) {
+  const set = setStatus ?? (await import('./crawlproof.js')).setCampaignStatus;
+  const sql = db();
+  let paused = 0;
+  let resumed = 0;
+  const pause = await sql`select id, listing_ad_id from apps where category = ${ADULT} and listing_ad_id is not null and listing_ad_error is distinct from ${ADULT_AD_PAUSED} limit 10`;
+  for (const a of pause) {
+    try {
+      await set(a.listing_ad_id, 'paused');
+      await sql`update apps set listing_ad_error = ${ADULT_AD_PAUSED}, listing_ad_at = now() where id = ${a.id}`;
+      paused++;
+    } catch (err) {
+      console.error(`[daemon] listing-ads: pausing ${a.listing_ad_id} failed: ${err.message}`);
+    }
+  }
+  const resume = await sql`select id, listing_ad_id from apps where category <> ${ADULT} and status = 'published' and listing_ad_error = ${ADULT_AD_PAUSED} limit 10`;
+  for (const a of resume) {
+    try {
+      await set(a.listing_ad_id, 'active');
+      await sql`update apps set listing_ad_error = null, listing_ad_at = now() where id = ${a.id}`;
+      resumed++;
+    } catch (err) {
+      console.error(`[daemon] listing-ads: resuming ${a.listing_ad_id} failed: ${err.message}`);
+    }
+  }
+  return { paused, resumed };
 }
 
 addJob('listing-ads', 5 * 60_000, () => runListingAds());

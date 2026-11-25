@@ -43,7 +43,8 @@ const slugify = (s) =>
 let houseOrgId = null;
 /** The org imported publishers live in until claimed, owned by a no-login system account. */
 export async function houseOrg(sql = db()) {
-  if (houseOrgId) return houseOrgId;
+  // The cached id is trusted only while its row exists (a test run recreates the schema).
+  if (houseOrgId && (await sql`select 1 as x from organizations where id = ${houseOrgId}`).length) return houseOrgId;
   const [user] = await sql`
     insert into users (email, name) values ('unclaimed@pwamart.com', 'Unclaimed listings')
     on conflict (lower(email)) do update set name = users.name returning id`;
@@ -195,6 +196,91 @@ export async function importProduct(product, { source = 'saasrow', inspectFn = i
       on conflict (origin) do update set result = 'imported', detail = excluded.detail, checked_at = now()`;
     return { result: 'imported', detail: slug, origin };
   });
+}
+
+/**
+ * A listing staff vouch for, from { name, url, description, tags }: published now
+ * under an unclaimed publisher for its domain (the owner can claim it later), in
+ * the category staff chose. Unlike an import it does not have to be an installable
+ * PWA, or even answer the inspector (many sites refuse a server's fetch): what the
+ * site says about itself is used when it can be read, the seed's own name and
+ * description always win, and the result reports `inspected` and `installable` so
+ * the caller knows which listings lack a manifest.
+ */
+export async function staffListing(item, { category, inspectFn = inspect, sql = db(), userId = null } = {}) {
+  let u;
+  try {
+    u = new URL(String(item.url ?? '').trim());
+  } catch {
+    return { result: 'skip', detail: 'not a URL' };
+  }
+  if (!/^https?:$/.test(u.protocol)) return { result: 'skip', detail: 'not an http(s) URL' };
+  const name = String(item.name ?? '').trim().slice(0, 80);
+  if (!name) return { result: 'skip', detail: 'name is required' };
+
+  let report = null;
+  let why = null;
+  try {
+    report = await inspectFn(u.href);
+  } catch (err) {
+    why = String(err.message).slice(0, 200);
+    if (u.protocol !== 'https:') return { result: 'skip', detail: `not https, and the site could not be read: ${why}` };
+  }
+  const origin = report?.origin ?? u.origin;
+  const [exists] = await sql`select slug, category, status from apps where origin = ${origin} and status <> 'removed' limit 1`;
+  if (exists) return { result: 'exists', slug: exists.slug, detail: `already listed in ${exists.category} (${exists.status})` };
+
+  const host = new URL(origin).hostname.replace(/^www\./, '');
+  const orgId = await houseOrg(sql);
+  const app = report?.app ?? {};
+  const description = String(item.description ?? '').trim() || app.description || '';
+  const slug = await sql.begin(async (tx) => {
+    let [pub] = await tx`select id from publishers where source = 'staff' and claim_domain = ${host} limit 1`;
+    if (!pub) {
+      [pub] = await tx`
+        insert into publishers (org_id, slug, name, website, bio, claimable, claim_domain, source, source_ref)
+        values (${orgId}, ${await uniquePublisherSlug(tx, host.split('.')[0] === 'app' ? host.split('.')[1] : host.replace(/\./g, '-'))},
+                ${name}, ${origin}, ${`Listed by pwamart staff. Unclaimed: the owner of ${host} can claim it.`}, true, ${host}, 'staff', ${host})
+        returning id`;
+    }
+    const appSlug = await uniqueAppSlug(tx, name);
+    await tx`
+      insert into apps ${tx({
+        publisher_id: pub.id,
+        slug: appSlug,
+        name,
+        summary: firstSentence(description),
+        description: description.slice(0, 8000),
+        url: report?.url ?? u.href,
+        origin,
+        start_url: app.startUrl ?? null,
+        manifest_url: report?.manifestUrl ?? null,
+        manifest_id: app.manifestId ?? null,
+        manifest: report?.manifest ? sql.json(report.manifest) : null,
+        icon_url: app.icon ?? null,
+        screenshots: sql.json(app.screenshots ?? []),
+        theme_color: app.themeColor ?? null,
+        background_color: app.backgroundColor ?? null,
+        display: app.display ?? null,
+        category,
+        tags: (Array.isArray(item.tags) ? item.tags : []).map(slugify).filter(Boolean).slice(0, 10),
+        status: 'published',
+        verify_token: randomBytes(12).toString('hex'),
+        verified_at: new Date(),
+        verified_by: 'staff',
+        check_report: sql.json(
+          report ? { installable: report.installable, score: report.score, checks: report.checks } : { installable: false, score: 0, checks: [], unread: why },
+        ),
+        ...(report ? featureColumns(report) : { features: [], features_checked_at: new Date() }),
+        checked_at: new Date(),
+        published_at: new Date(),
+        created_by: userId,
+        source: 'staff',
+        source_ref: origin,
+      })}`;
+    return appSlug;
+  });
+  return { result: 'published', slug, inspected: Boolean(report), installable: Boolean(report?.installable), ...(why && { detail: `listed without a manifest: ${why}` }) };
 }
 
 /** Every approved saasrow product, paged. */

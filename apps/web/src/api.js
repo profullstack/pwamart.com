@@ -5,11 +5,11 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import * as auth from './auth.js';
 import { applyPurchase, billingState, currentPlan, quote, setRenew } from './billing.js';
-import { checkClaim, shapeClaim, startClaim } from './imports.js';
+import { checkClaim, shapeClaim, staffListing, startClaim } from './imports.js';
 import { follow as followFn } from './releases.js';
 import { vapidKeysFromEnv } from '@profullstack/notifications/server';
-import { FEATURES, PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureKey, surfaceCounts, getApp, getPublisher, listApps, listPublishers, recordInstall, reviewsFor, shape } from './catalog.js';
-import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
+import { FEATURES, PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureKey, surfaceCounts, getApp, getPublisher, isAdult, listApps, listPublishers, publisherIsAdult, recordInstall, reviewsFor, shape, slugIsAdult } from './catalog.js';
+import { ADULT, ADULT_LABEL, ADULT_SIGNIN, CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { InspectError, featureColumns, inspect, verifyOrigin } from './inspect.js';
 import { SURFACES, cleanSurfaceSet, detectSurfaces, keysOf, mergeSurfaces, surfaceKey, w3bsCatalog } from './surfaces.js';
 import { allCollections, collectionApps, getCollection, summarize } from './collections.js';
@@ -110,6 +110,33 @@ async function requireUser(c) {
   const u = await currentUser(c);
   if (!u) fail(401, 'sign in first');
   return u;
+}
+
+/* ----------------------------------------------------- adult category -- */
+
+const ROBOTS_OFF = 'noindex, nofollow';
+
+/**
+ * Every /apps/:slug route, read or write: an adult listing answers only a
+ * signed-in member or a valid account key. Never a 404, so a member following a
+ * link is told to sign in. What it does answer is marked noindex.
+ */
+async function adultGate(c, next) {
+  if (!(await slugIsAdult(c.req.param('slug')))) return next();
+  const user = await currentUser(c).catch(() => null);
+  if (!user) return c.json({ error: ADULT_SIGNIN, signin: `${config.siteUrl}/signin` }, 401, { 'x-robots-tag': ROBOTS_OFF });
+  await next();
+  c.header('x-robots-tag', ROBOTS_OFF);
+}
+// In Hono this pattern also matches /apps/<slug> itself.
+api.use('/apps/:slug/*', adultGate);
+
+/** For a route that names an adult thing some other way (a site, a publisher): 401 unless signed in. */
+async function requireMemberForAdult(c) {
+  const user = await currentUser(c).catch(() => null);
+  if (!user) fail(401, ADULT_SIGNIN, { signin: `${config.siteUrl}/signin` });
+  c.header('x-robots-tag', ROBOTS_OFF);
+  return user;
 }
 
 /* ---------------------------------------------------------------- plans -- */
@@ -285,9 +312,13 @@ api.delete('/keys/:id', async (c) => {
 
 /* ------------------------------------------------------- public catalog -- */
 
+// A signed-in caller also gets the Adult (18+) entry; an anonymous one never sees it or its count.
 api.get('/categories', async (c) => {
-  const counts = await categoryCounts();
-  return c.json({ categories: CATEGORIES.map(([slug, name]) => ({ slug, name, apps: counts[slug] ?? 0 })) });
+  const user = await currentUser(c).catch(() => null);
+  const counts = await categoryCounts({ adult: Boolean(user) });
+  const categories = CATEGORIES.map(([slug, name]) => ({ slug, name, apps: counts[slug] ?? 0 }));
+  if (user) categories.push({ slug: ADULT, name: ADULT_LABEL, apps: counts[ADULT] ?? 0, adult: true, signed_in_only: true });
+  return c.json({ categories });
 });
 
 api.get('/plans', (c) =>
@@ -301,8 +332,13 @@ api.get('/apps', async (c) => {
   if (raw && !feature) return c.json({ error: `unknown feature; one of: ${Object.keys(FEATURES).join(', ')}` }, 400);
   const surface = surfaceKey(q.surface);
   if (q.surface && !surface) return c.json({ error: `unknown surface; one of: ${Object.keys(SURFACES).join(', ')}` }, 400);
+  // Adult listings come back only for an explicit category=adult from a signed-in
+  // caller; every other list leaves them out (catalog.js listApps).
+  const adult = q.category === ADULT;
+  if (adult) await requireMemberForAdult(c);
   return c.json(
     await listApps({
+      adult,
       q: q.q,
       category: q.category,
       publisher: q.publisher,
@@ -381,6 +417,8 @@ api.get('/badge', async (c) => {
   if (!siteHost(site)) fail(400, 'pass ?site=<homepage URL>');
   const row = await appBySite(site);
   const s = encodeURIComponent(site);
+  // The badge image itself stays public (/for.svg); which listing a site is does not.
+  if (row && (await slugIsAdult(row.slug))) await requireMemberForAdult(c);
   if (!row)
     return c.json({ listed: false, site, image: `${config.siteUrl}/for.svg?site=${s}`, link: `${config.siteUrl}/for?site=${s}`, submit: `${config.siteUrl}/console/submit?ref=badge` });
   return c.json({ listed: true, site, ...badgePayload(row), by_site: siteSnippet(config.siteUrl, site) });
@@ -539,7 +577,10 @@ api.get('/publishers', async (c) => {
 api.get('/publishers/:slug', async (c) => {
   const p = await getPublisher(c.req.param('slug'));
   if (!p) return c.json({ error: 'no such publisher' }, 404);
-  return c.json({ publisher: p, ...(await listApps({ publisher: p.slug, limit: 100, sort: 'top' })) });
+  // A publisher with only adult listings is gated like them; a mixed one shows its other apps.
+  const adult = await publisherIsAdult(p.slug);
+  if (adult) await requireMemberForAdult(c);
+  return c.json({ publisher: p, ...(await listApps({ publisher: p.slug, limit: 100, sort: 'top', ...(adult && { category: ADULT, adult: true }) })) });
 });
 
 /** Grade any URL's installability. Signed in, so the inspector is not an open proxy. */
@@ -913,18 +954,20 @@ api.get('/releases', async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query('limit')) || 30, 1), 100);
   const rows = await db()`
     select r.*, a.slug, a.name, a.icon_url from app_releases r join apps a on a.id = r.app_id
-    where a.status = 'published' and r.kind <> 'launched' order by r.created_at desc limit ${limit}`;
+    where a.status = 'published' and a.category <> ${ADULT} and r.kind <> 'launched' order by r.created_at desc limit ${limit}`;
   return c.json({ releases: rows.map(releaseShape) });
 });
 
-async function followTarget(kind, slug) {
+async function followTarget(c, kind, slug) {
   if (kind === 'publisher') {
-    const [p] = await db()`select id, name from publishers where slug = ${String(slug).toLowerCase()}`;
+    const [p] = await db()`select id, slug, name from publishers where slug = ${String(slug).toLowerCase()}`;
     if (!p) fail(404, 'no such publisher');
+    if (await publisherIsAdult(p.slug)) await requireMemberForAdult(c);
     return { id: p.id, name: p.name };
   }
   const row = await getApp(slug);
   if (!row) fail(404, 'no such app');
+  if (isAdult(row)) await requireMemberForAdult(c);
   return { id: row.id, name: row.name };
 }
 
@@ -937,7 +980,7 @@ api.post('/follow', async (c) => {
   const b = await body(c);
   const kind = b.kind === 'publisher' ? 'publisher' : 'app';
   if (!str(b.slug)) return c.json({ error: 'slug is required' }, 400);
-  const target = await followTarget(kind, b.slug);
+  const target = await followTarget(c, kind, b.slug);
   const user = await currentUser(c).catch(() => null);
   const email = user ? null : str(b.email, 254)?.toLowerCase() ?? null;
   if (email && !EMAIL.test(email)) return c.json({ error: 'enter a valid email address' }, 400);
@@ -975,7 +1018,7 @@ api.delete('/follows/:id', async (c) => {
 /** Is this browser/user following? (for the button state) */
 api.get('/follow/state', async (c) => {
   const kind = c.req.query('kind') === 'publisher' ? 'publisher' : 'app';
-  const target = await followTarget(kind, c.req.query('slug'));
+  const target = await followTarget(c, kind, c.req.query('slug'));
   const user = await currentUser(c).catch(() => null);
   const endpoint = c.req.query('endpoint');
   const [f] = user
@@ -1117,6 +1160,8 @@ api.get('/apps/:slug/featured', async (c) => {
 api.post('/apps/:slug/feature', async (c) => {
   const { user, row } = await appFor(c, c.req.param('slug'));
   if (row.status !== 'published') return c.json({ error: 'publish the app first; only a live listing can be featured' }, 409);
+  // Featured means the home page, the newsletter and an ad on the network: all public.
+  if (isAdult(row)) return c.json({ error: 'Adult (18+) listings cannot be featured: they are shown only inside their category, to signed-in members.' }, 409);
   const b = await body(c);
   if (b.credit === true || b.credit === 'true') {
     // A free Featured week earned with karma: the same grant, no CoinPay.
@@ -1307,7 +1352,35 @@ api.post('/admin/apps/:slug', async (c) => {
   if (b.verified) await db()`update apps set verified_at = coalesce(verified_at, now()), verified_by = coalesce(verified_by, 'staff') where id = ${row.id}`;
   if (b.status && ['draft', 'published', 'unlisted', 'removed'].includes(b.status))
     await db()`update apps set status = ${b.status}::app_status, published_at = case when ${b.status} = 'published' then coalesce(published_at, now()) else published_at end where id = ${row.id}`;
+  // Staff move a listing in or out of any category, Adult (18+) included.
+  if (b.category !== undefined) {
+    if (!CATEGORY_NAMES[b.category]) fail(400, `unknown category; one of: ${Object.keys(CATEGORY_NAMES).join(', ')}`);
+    await db()`update apps set category = ${b.category}, updated_at = now() where id = ${row.id}`;
+  }
   return c.json({ app: shape(await getApp(row.slug, { includeDrafts: true })) });
+});
+
+/**
+ * Staff bulk listing: { category, items: [{ name, url, description, tags }] }, up
+ * to 25 a call (each site is fetched). Every item is published under an unclaimed
+ * publisher for its domain, staff-verified, whether or not the site passes the
+ * installability checks: the answer says which did (`installable`) and whether the
+ * site could be read at all (`inspected`). An origin already listed is left alone
+ * and reported as `exists`. This is how the Adult (18+) category is seeded.
+ */
+api.post('/admin/listings', async (c) => {
+  const user = await requireAdmin(c);
+  const b = await body(c);
+  if (!CATEGORY_NAMES[b.category]) fail(400, `category is required; one of: ${Object.keys(CATEGORY_NAMES).join(', ')}`);
+  if (!Array.isArray(b.items) || !b.items.length) fail(400, 'items is required: [{ name, url, description, tags }]');
+  if (b.items.length > 25) fail(400, 'at most 25 items a call');
+  const results = [];
+  for (const item of b.items) {
+    const r = await staffListing(item ?? {}, { category: b.category, userId: user.id }).catch((err) => ({ result: 'error', detail: String(err.message).slice(0, 200) }));
+    results.push({ url: item?.url ?? null, name: item?.name ?? null, ...r });
+  }
+  const count = (k) => results.filter((r) => r.result === k).length;
+  return c.json({ category: b.category, published: count('published'), exists: count('exists'), skipped: count('skip'), errors: count('error'), results });
 });
 
 /* ------------------------------------------------- admin credit codes -- */

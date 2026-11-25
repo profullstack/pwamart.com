@@ -115,4 +115,16 @@ export const CATEGORIES = [
   ['security', 'Security & privacy'],
   ['design', 'Design & photo'],
 ];
-export const CATEGORY_NAMES = Object.fromEntries(CATEGORIES);
+/**
+ * The Adult (18+) category. It is a category like any other in the database, but
+ * it is not in CATEGORIES on purpose: everything built from that list (the public
+ * category chips, the sitemap, GET /categories for an anonymous caller) leaves it
+ * out without having to remember to. A listing is adult when its category is
+ * `adult`, and nothing else makes it adult. Signed-out readers never see one.
+ */
+export const ADULT = 'adult';
+export const ADULT_LABEL = 'Adult (18+)';
+export const ADULT_NOTICE = 'Adult content. You must be 18 or older.';
+export const ADULT_SIGNIN = 'The Adult (18+) category needs a signed-in account: sign in, or send your account API key.';
+export const ALL_CATEGORIES = [...CATEGORIES, [ADULT, ADULT_LABEL]];
+export const CATEGORY_NAMES = Object.fromEntries(ALL_CATEGORIES);

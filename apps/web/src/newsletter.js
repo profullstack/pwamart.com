@@ -63,7 +63,7 @@ export async function syncFeaturedAds({ sql = db(), ads, siteUrl = config.siteUr
   let paused = 0;
   const todo = await sql`select s.payment_id, a.slug, a.name from featured_slots s join apps a on a.id = s.app_id
                          where s.ad_campaign_id is null and s.ends_at > now() and s.ad_attempts < 5
-                           and coalesce(s.ad_status, '') <> 'failed' and a.status = 'published'
+                           and coalesce(s.ad_status, '') <> 'failed' and a.status = 'published' and a.category <> 'adult'
                          order by s.created_at limit ${perTurn}`;
   for (const s of todo) {
     try {
@@ -178,9 +178,9 @@ export async function draftIssue({ userId, subject, intro } = {}) {
     const since = last?.sent_at ?? new Date(Date.now() - 7 * 86_400_000);
     const owed = await tx`select distinct on (a.id) s.payment_id, a.id, a.slug, a.name, a.summary
                           from featured_slots s join apps a on a.id = s.app_id
-                          where s.issue_id is null and a.status = 'published' order by a.id, s.created_at`;
+                          where s.issue_id is null and a.status = 'published' and a.category <> 'adult' order by a.id, s.created_at`;
     const fresh = await tx`select slug, name, summary from apps
-                           where status = 'published' and published_at > ${since}
+                           where status = 'published' and category <> 'adult' and published_at > ${since}
                              and not (id = any(${owed.map((a) => a.id)}::uuid[]))
                            order by installs desc, published_at desc limit 12`;
     const lines = [

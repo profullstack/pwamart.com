@@ -4,13 +4,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configured, db, ping } from '@pwamart/db';
 import { Hono } from 'hono';
-import { api, coinpayWebhook } from './api.js';
+import { api, coinpayWebhook, currentUser } from './api.js';
 import * as auth from './auth.js';
 import { getCookie } from 'hono/cookie';
 import { mountOAuth } from './oauth.js';
 import { mountCoinPaySignin } from './coinpay-signin.js';
-import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, featureKey, surfaceCounts, getApp, getPublisher, listApps, listPublishers, reviewsFor, shape } from './catalog.js';
-import { CATEGORIES, config } from './config.js';
+import { PUBLISHER_FILTERS, PUBLISHER_SORTS, categoryCounts, featureCounts, featureKey, surfaceCounts, getApp, getPublisher, isAdult, listApps, listPublishers, publisherIsAdult, reviewsFor, shape, slugIsAdult } from './catalog.js';
+import { ADULT, ADULT_NOTICE, ADULT_SIGNIN, CATEGORIES, config } from './config.js';
 import { handleRpc } from '@profullstack/pwamart-mcp/core';
 import { buildProfile } from './mobileconfig.js';
 import { advertisePage, appPage, invitePage, leaderboardPage, leaderboardProfilePage, collectionPage, collectionsPage, layout, releasesPage, browsePage, developersPage, featuredPage, homePage, publishersPage, newsletterPage, notFoundPage, pricingPage, publisherPage } from './pages.js';
@@ -101,24 +101,72 @@ async function stats() {
   if (Date.now() - statsCache.at < 60_000) return statsCache.value;
   try {
     const [s] = await db()`
-      select (select count(*) from apps where status = 'published')::int as apps,
-             (select count(distinct publisher_id) from apps where status = 'published')::int as publishers,
-             (select coalesce(sum(installs), 0) from apps where status = 'published')::int as installs`;
+      select (select count(*) from apps where status = 'published' and category <> ${ADULT})::int as apps,
+             (select count(distinct publisher_id) from apps where status = 'published' and category <> ${ADULT})::int as publishers,
+             (select coalesce(sum(installs), 0) from apps where status = 'published' and category <> ${ADULT})::int as installs`;
     statsCache = { at: Date.now(), value: s };
   } catch {}
   return statsCache.value;
 }
 
-const html = (c, body, status = 200) => c.html(body, status, { 'cache-control': 'public, max-age=60' });
+// A page rendered for a signed-in member (it may show the Adult (18+) entry) is never shared.
+const html = (c, body, status = 200) => c.html(body, status, { 'cache-control': c.get('member') ? 'private, no-store' : 'public, max-age=60' });
+
+/* ------------------------------------------------------- adult category -- */
+
+const ROBOTS_OFF = 'noindex, nofollow';
+const ADULT_SEEN = 'pm_adult';
+
+/** The signed-in reader of a store page (session cookie, or a key for a script), or null. */
+async function member(c) {
+  if (c.get('member') !== undefined) return c.get('member');
+  const user = configured() ? await currentUser(c).catch(() => null) : null;
+  c.set('member', user ?? null);
+  return user ?? null;
+}
+
+/** Off to sign in, and back to this page afterwards (the console keeps ?next= across the emailed link). */
+const toSignin = (c) => {
+  const u = new URL(c.req.url);
+  c.header('cache-control', 'no-store');
+  c.header('x-robots-tag', ROBOTS_OFF);
+  return c.redirect(`/signin?next=${encodeURIComponent(u.pathname + u.search)}`, 302);
+};
+
+/** Mark an adult page out of every index. Call it before the page is rendered (html() keeps a member's page out of shared caches). */
+const adultHeaders = (c) => c.header('x-robots-tag', ROBOTS_OFF);
+
+/** The one-line 18+ notice, the first time in a browser session; null after that. */
+function adultNotice(c) {
+  if (getCookie(c, ADULT_SEEN)) return null;
+  c.header('set-cookie', `${ADULT_SEEN}=1; Path=/; SameSite=Lax${config.isProd ? '; Secure' : ''}`, { append: true });
+  return ADULT_NOTICE;
+}
+
+// Every page, feed and file under an adult listing's URL: sign in first. The
+// embeddable badge images are the exception: they show a rating and an install
+// count, nothing else, and sit on the listed site itself.
+async function adultPageGate(c, next) {
+  if (/\/(badge|icon-badge)\.svg$/.test(c.req.path) || !configured()) return next();
+  if (!(await slugIsAdult(c.req.param('slug')))) return next();
+  if (!(await member(c))) return toSignin(c);
+  await next();
+  // After the route: whatever it answered (a page, a feed, a profile) is private and unindexed.
+  c.header('x-robots-tag', ROBOTS_OFF);
+  c.header('cache-control', 'private, no-store');
+}
+// In Hono this pattern also matches /apps/<slug> itself.
+app.use('/apps/:slug/*', adultPageGate);
 
 /* ---------------------------------------------------------------- pages -- */
 
 app.get('/', async (c) => {
+  const user = await member(c);
   const [featured, top, fresh, counts, features, surfaces, collections, s] = await Promise.all([
     listApps({ featured: true, limit: 4 }),
     listApps({ sort: 'top', limit: 12 }),
     listApps({ sort: 'new', limit: 8 }),
-    categoryCounts(),
+    categoryCounts({ adult: Boolean(user) }),
     featureCounts(),
     surfaceCounts(),
     allCollections(config.siteUrl),
@@ -126,26 +174,34 @@ app.get('/', async (c) => {
   ]);
   const top5 = await karma.topKarma({ limit: 5 }).catch(() => null);
   const workflows = collections.filter((x) => x.section === 'workflows');
-  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, surfaces, collections: workflows, stats: s, karma: top5 }));
+  return html(c, homePage({ featured: featured.apps, top: top.apps, fresh: fresh.apps, counts, features, surfaces, collections: workflows, stats: s, karma: top5, adult: Boolean(user) }));
 });
 
 app.get('/apps', async (c) => {
   const q = c.req.query('q')?.trim() || null;
-  const category = CATEGORIES.some(([k]) => k === c.req.query('category')) ? c.req.query('category') : null;
+  const user = await member(c);
+  // The Adult (18+) category: members only. Anyone else is sent to sign in, never a 404.
+  const adult = c.req.query('category') === ADULT;
+  if (adult && !user) return toSignin(c);
+  const category = adult ? ADULT : CATEGORIES.some(([k]) => k === c.req.query('category')) ? c.req.query('category') : null;
   const sort = c.req.query('sort') || null;
   const offset = Math.max(0, Number(c.req.query('offset')) || 0);
   const limit = 24;
-  const publisher = c.req.query('publisher') ? await getPublisher(c.req.query('publisher')) : null;
+  let publisher = c.req.query('publisher') ? await getPublisher(c.req.query('publisher')) : null;
+  // A publisher with only adult listings is not named to an anonymous reader, even on an empty list.
+  if (publisher && !user && (await publisherIsAdult(publisher.slug))) publisher = null;
   const feature = featureKey(c.req.query('feature')) ?? (c.req.query('offline') === '1' ? 'offline' : null);
   const surface = surfaceKey(c.req.query('surface'));
   const [list, counts, features, surfaces, s] = await Promise.all([
-    listApps({ q, category, publisher: publisher?.slug, feature, surface, sort: sort ?? 'top', limit, offset }),
-    categoryCounts(),
+    listApps({ q, category, publisher: publisher?.slug, feature, surface, sort: sort ?? 'top', limit, offset, adult }),
+    categoryCounts({ adult: Boolean(user) }),
     featureCounts(),
     surfaceCounts(),
     stats(),
   ]);
-  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher, feature, features, surface, surfaces }));
+  const notice = adult ? adultNotice(c) : null;
+  if (adult) adultHeaders(c);
+  return html(c, browsePage({ q, category, sort, list, counts, offset, limit, stats: s, publisher, feature, features, surface, surfaces, adult: Boolean(user), notice }));
 });
 
 app.get('/publishers', async (c) => {
@@ -166,12 +222,13 @@ app.get('/apps/:slug', async (c) => {
     getPublisher(a.publisher.slug),
     reviewsFor(row.id),
     commentsFor(row.id),
-    listApps({ category: a.category, limit: 7 }),
+    // The gate above has already seen a member when the listing is adult.
+    listApps({ category: a.category, limit: 7, adult: isAdult(row) }),
     stats(),
   ]);
   const related = rel.apps.filter((x) => x.slug !== a.slug).slice(0, 6);
   const releases = await db()`select * from app_releases where app_id = ${row.id} order by created_at desc limit 3`;
-  return html(c, appPage({ app: a, publisher, reviews, comments, related, releases, stats: s }));
+  return html(c, appPage({ app: a, publisher, reviews, comments, related, releases, stats: s, notice: isAdult(row) ? adultNotice(c) : null }));
 });
 
 // iOS one-tap install: one app, or a bundle (?apps=a,b,c).
@@ -192,7 +249,8 @@ app.get('/bundle.mobileconfig', async (c) => {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
     .slice(0, 30);
-  const rows = (await Promise.all(slugs.map((s) => getApp(s)))).filter(Boolean);
+  const user = await member(c);
+  const rows = (await Promise.all(slugs.map((s) => getApp(s)))).filter((r) => r && (user || !isAdult(r)));
   if (!rows.length) return c.text('name some apps: /bundle.mobileconfig?apps=slug1,slug2', 400);
   const body = await buildProfile(rows.map((r) => ({ ...shape(r), icon_url: r.icon_url })), { siteUrl: config.siteUrl });
   return c.body(body, 200, {
@@ -238,7 +296,13 @@ app.get('/collections/:slug/mcp.json', async (c) => {
 app.get('/publishers/:slug', async (c) => {
   const p = await getPublisher(c.req.param('slug'));
   if (!p) return c.html(notFoundPage({ stats: await stats() }), 404);
-  return html(c, publisherPage({ publisher: p, list: await listApps({ publisher: p.slug, limit: 100 }), stats: await stats() }));
+  // A publisher whose every listing is adult is gated like the listings; a mixed
+  // one keeps its public page, without the adult ones.
+  const adult = await publisherIsAdult(p.slug);
+  if (adult && !(await member(c))) return toSignin(c);
+  const list = await listApps({ publisher: p.slug, limit: 100, ...(adult && { category: ADULT, adult: true }) });
+  if (adult) adultHeaders(c);
+  return html(c, publisherPage({ publisher: p, list, stats: await stats(), adult }));
 });
 
 /* ---------------------------------------------------------- leaderboard -- */
@@ -611,7 +675,7 @@ const releaseItems = (rows) =>
 // Every release across the store.
 app.get('/releases.xml', async (c) => {
   const rows = configured()
-    ? await db()`select r.*, a.slug, a.name from app_releases r join apps a on a.id = r.app_id where a.status = 'published' and r.kind <> 'launched' order by r.created_at desc limit 50`
+    ? await db()`select r.*, a.slug, a.name from app_releases r join apps a on a.id = r.app_id where a.status = 'published' and a.category <> ${ADULT} and r.kind <> 'launched' order by r.created_at desc limit 50`
     : [];
   return c.body(rss({ title: 'pwamart: app updates', link: `${config.siteUrl}/releases`, self: `${config.siteUrl}/releases.xml`, description: 'What changed in the web apps on pwamart.', items: releaseItems(rows) }), 200, xmlHeaders);
 });
@@ -627,9 +691,11 @@ app.get('/apps/:slug/releases.xml', async (c) => {
 app.get('/publishers/:slug/feed.xml', async (c) => {
   const p = await getPublisher(c.req.param('slug'));
   if (!p) return c.text('no such publisher', 404);
+  // A feed reader is anonymous: adult listings never go into a publisher's feed.
+  if (await publisherIsAdult(p.slug)) return c.text(`${ADULT_SIGNIN}\n`, 401, { 'x-robots-tag': ROBOTS_OFF, 'cache-control': 'no-store' });
   const rows = await db()`
     select r.*, a.slug, a.name from app_releases r join apps a on a.id = r.app_id join publishers pub on pub.id = a.publisher_id
-    where pub.slug = ${p.slug} and a.status = 'published' order by r.created_at desc limit 50`;
+    where pub.slug = ${p.slug} and a.status = 'published' and a.category <> ${ADULT} order by r.created_at desc limit 50`;
   return c.body(rss({ title: `${p.name} on pwamart`, link: `${config.siteUrl}/publishers/${p.slug}`, self: `${config.siteUrl}/publishers/${p.slug}/feed.xml`, description: `New apps and updates from ${p.name}.`, items: releaseItems(rows) }), 200, xmlHeaders);
 });
 
@@ -695,8 +761,8 @@ app.get('/assets/push-client.js', (c) => (PUSH_CLIENT ? c.body(PUSH_CLIENT, 200,
 app.get('/assets/push-sw.js', (c) => (PUSH_SW ? c.body(PUSH_SW, 200, { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=86400' }) : c.text('missing', 404)));
 
 app.get('/sitemap.xml', async (c) => {
-  const rows = configured() ? await db()`select slug, updated_at from apps where status = 'published' order by updated_at desc limit 5000` : [];
-  const pubs = configured() ? await db()`select distinct p.slug from publishers p join apps a on a.publisher_id = p.id where a.status = 'published'` : [];
+  const rows = configured() ? await db()`select slug, updated_at from apps where status = 'published' and category <> ${ADULT} order by updated_at desc limit 5000` : [];
+  const pubs = configured() ? await db()`select distinct p.slug from publishers p join apps a on a.publisher_id = p.id where a.status = 'published' and a.category <> ${ADULT}` : [];
   const u = (loc, mod) => `<url><loc>${config.siteUrl}${loc}</loc>${mod ? `<lastmod>${new Date(mod).toISOString().slice(0, 10)}</lastmod>` : ''}</url>`;
   const body = [
     u('/'),
@@ -735,6 +801,7 @@ Unlimited $199/year (unlimited publishers and apps, shared orgs, teams, projects
 ## API (${config.siteUrl}/api/v1)
 Reads are public. Writes take \`Authorization: Bearer pm_live_...\` (create one in the console under API keys).
 - GET  /apps?q=&category=&publisher=&feature=offline&surface=cli|api|mcp|desktop&sort=top|new|rating|name&limit=&offset=   feature=offline: a service worker that answers from a cache
+  category=adult (Adult 18+) answers only a signed-in account or API key (401 otherwise); adult listings are in no other list, feed or sitemap
 - GET  /apps/:slug                         details, publisher, reviews; app.surfaces = {pwa, cli, api, mcp, desktop} with install commands and downloads
 - GET  /surfaces                           how many apps are a PWA (all), a CLI, an API, an MCP server, a desktop app
 - GET  /collections, GET /collections/:slug   agentic workflow collections, each with one-command installs

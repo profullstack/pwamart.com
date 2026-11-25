@@ -20,7 +20,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'free text, e.g. "markdown notes"' },
-        category: { type: 'string', description: 'category slug from list_categories' },
+        category: { type: 'string', description: 'category slug from list_categories. "adult" (Adult 18+) answers only with an account API key or sign-in; adult apps are in no other search' },
         sort: { type: 'string', enum: ['top', 'votes', 'new', 'rating', 'name'], description: 'votes = most upvoted' },
         feature: { type: 'string', enum: ['offline'], description: 'only apps with this detected feature; offline = its service worker answers from a cache' },
         offline: { type: 'boolean', description: 'shorthand for feature: "offline"' },
@@ -55,7 +55,7 @@ export const TOOLS = [
     name: 'list_categories',
     title: 'List Categories',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-    description: 'Every category with how many apps it has.',
+    description: 'Every category with how many apps it has. The Adult (18+) category is listed only for a signed-in account.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

@@ -42,6 +42,20 @@ origin (a `.well-known/pwamart.txt` file, a `<meta name="pwamart-verification">`
 Limits count every org the account created. Payments go through CoinPay; a settled payment
 adds a year. A lapsed plan never hides a live listing.
 
+### The Adult (18+) category
+
+A listing is adult when its category is `adult`. Signed-out readers never see one: it is in
+no list, search, feed, sitemap, collection, newsletter, digest or ad campaign, and its page,
+the category page (`/apps?category=adult`) and every JSON route about it answer with sign-in
+(a redirect for pages, 401 for JSON), never a 404. Signed-in members get an `Adult (18+)`
+entry where categories are listed, and adult listings appear only inside that category (the
+API and MCP tools need an explicit `category=adult`). Those pages are `noindex, nofollow`.
+The embeddable badge image keeps working. Adult listings cannot be featured.
+
+Staff move a listing in or out with `POST /api/v1/admin/apps/<slug> {"category": "adult"}`
+and bulk-list sites, installable or not, with `bin/seed-listings.mjs <file.json> --category adult`
+(or `POST /api/v1/admin/listings`).
+
 ## Layout
 
 ```
@@ -52,6 +66,7 @@ packages/mcp    @profullstack/pwamart-mcp: stdio server + the tool core the web 
 packages/db     postgres client + forward-only migrations (run on every boot)
 packages/payments  the shared CoinPay module (copied verbatim between brands)
 bin/seed-fleet.mjs  lists Profullstack's own PWAs (staff key)
+bin/seed-listings.mjs  staff bulk listing from a JSON file of {name, url, description, tags} into one category
 ```
 
 ## Develop

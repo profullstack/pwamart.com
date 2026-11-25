@@ -11,6 +11,8 @@ const CATEGORIES = [
   ['social', 'Social'], ['media', 'Music & video'], ['news', 'News & reading'], ['finance', 'Finance & crypto'], ['business', 'Business'],
   ['education', 'Education'], ['health', 'Health & fitness'], ['lifestyle', 'Lifestyle'], ['shopping', 'Shopping'],
   ['travel', 'Travel & maps'], ['games', 'Games'], ['utilities', 'Utilities'], ['security', 'Security & privacy'], ['design', 'Design & photo'],
+  // Shown only to signed-in members on the store; never in public lists, feeds or search.
+  ['adult', 'Adult (18+)'],
 ];
 
 class ApiError extends Error {
