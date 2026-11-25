@@ -1,5 +1,5 @@
 import { db } from '@pwamart/db';
-import { CATEGORY_NAMES } from './config.js';
+import { ADULT, CATEGORY_NAMES } from './config.js';
 import { mergeSurfaces, w3bsPage } from './surfaces.js';
 
 /**
@@ -81,7 +81,7 @@ export async function surfaceCounts() {
            count(*) filter (where surface_keys @> array['api']::text[])::int as api,
            count(*) filter (where surface_keys @> array['mcp']::text[])::int as mcp,
            count(*) filter (where surface_keys @> array['desktop']::text[])::int as desktop
-    from apps where status = 'published'`;
+    from apps where status = 'published' and category <> ${ADULT}`;
   return r;
 }
 
@@ -102,14 +102,25 @@ export async function featureCounts() {
   const sql = db();
   const out = {};
   for (const k of Object.keys(FEATURES)) {
-    const [r] = await sql`select count(*)::int as n from apps where status = 'published' and features @> array[${k}]::text[]`;
+    const [r] = await sql`select count(*)::int as n from apps where status = 'published' and category <> ${ADULT} and features @> array[${k}]::text[]`;
     out[k] = r.n;
   }
   return out;
 }
 
-/** Published apps, searchable. `q` is websearch syntax, so raw input never errors. */
-export async function listApps({ q, category, publisher, featured, feature, surface, slugs, sort = 'top', limit = 24, offset = 0 } = {}) {
+/** Is this row (or shaped app) in the Adult (18+) category? */
+export const isAdult = (row) => row?.category === ADULT;
+
+/**
+ * Published apps, searchable. `q` is websearch syntax, so raw input never errors.
+ *
+ * Adult listings live only inside their category: every list without an explicit
+ * `category: 'adult'` leaves them out, for members too. Asking for that category
+ * returns nothing unless the caller also passes `adult: true`, which a route does
+ * only after it has seen a signed-in member or a valid account key.
+ */
+export async function listApps({ q, category, publisher, featured, feature, surface, slugs, sort = 'top', limit = 24, offset = 0, adult = false } = {}) {
+  if (category === ADULT && !adult) return { total: 0, apps: [] };
   const sql = db();
   const lim = Math.min(Math.max(Number(limit) || 24, 1), 100);
   const off = Math.max(Number(offset) || 0, 0);
@@ -121,7 +132,7 @@ export async function listApps({ q, category, publisher, featured, feature, surf
     select ${PUBLIC_FIELDS(sql)}, count(*) over () as total
     from apps a join publishers p on p.id = a.publisher_id
     where a.status = 'published'
-      ${category ? sql`and a.category = ${category}` : sql``}
+      ${category ? sql`and a.category = ${category}` : sql`and a.category <> ${ADULT}`}
       ${publisher ? sql`and p.slug = ${publisher}` : sql``}
       ${featured ? sql`and a.featured` : sql``}
       ${feature ? sql`and a.features @> array[${String(feature)}]::text[]` : sql``}
@@ -157,8 +168,28 @@ export async function getPublisher(slug) {
   return p ?? null;
 }
 
-export async function categoryCounts() {
-  const rows = await db()`select category, count(*)::int as n from apps where status = 'published' group by category`;
+/**
+ * True when every listing a publisher has is adult (and it has at least one): its
+ * page would name an adult site, so it is gated like the listings themselves.
+ */
+export async function publisherIsAdult(slug) {
+  const [r] = await db()`
+    select count(*) filter (where a.category = ${ADULT})::int as adult, count(*) filter (where a.category <> ${ADULT})::int as other
+    from apps a join publishers p on p.id = a.publisher_id
+    where p.slug = ${String(slug).toLowerCase()} and a.status <> 'removed'`;
+  return r.adult > 0 && r.other === 0;
+}
+
+/** Is the app with this slug adult? One indexed read; the gates on /apps/:slug ask it. */
+export async function slugIsAdult(slug) {
+  const [r] = await db()`select 1 as x from apps where slug = ${String(slug ?? '').toLowerCase()} and category = ${ADULT}`;
+  return Boolean(r);
+}
+
+/** Published apps per category. The adult count is included only for a signed-in reader (`adult: true`). */
+export async function categoryCounts({ adult = false } = {}) {
+  const sql = db();
+  const rows = await sql`select category, count(*)::int as n from apps where status = 'published' ${adult ? sql`` : sql`and category <> ${ADULT}`} group by category`;
   return Object.fromEntries(rows.map((r) => [r.category, r.n]));
 }
 
@@ -193,16 +224,16 @@ export async function listPublishers({ q, filter = 'all', sort = 'apps', limit =
   const sql = db();
   const term = q ? `%${String(q).replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : null;
   const where = sql`
-    where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published')
+    where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published' and a.category <> ${ADULT})
     ${term ? sql`and (p.name ilike ${term} or p.slug ilike ${term} or p.website ilike ${term})` : sql``}
     ${filter === 'claimed' ? sql`and not p.claimable` : filter === 'imported' ? sql`and p.claimable` : filter === 'verified' ? sql`and p.verified` : sql``}`;
   const order =
     sort === 'name' ? sql`order by lower(p.name)` : sort === 'new' ? sql`order by p.created_at desc` : sql`order by live desc, installs desc, lower(p.name)`;
   const rows = await sql`
     select p.slug, p.name, p.website, p.bio, p.avatar_url, p.verified, p.claimable, p.source, p.created_at,
-           (select count(*) from apps a where a.publisher_id = p.id and a.status = 'published')::int as live,
-           (select coalesce(sum(a.installs), 0) from apps a where a.publisher_id = p.id and a.status = 'published')::int as installs,
-           (select a.icon_url from apps a where a.publisher_id = p.id and a.status = 'published' and a.icon_url is not null
+           (select count(*) from apps a where a.publisher_id = p.id and a.status = 'published' and a.category <> ${ADULT})::int as live,
+           (select coalesce(sum(a.installs), 0) from apps a where a.publisher_id = p.id and a.status = 'published' and a.category <> ${ADULT})::int as installs,
+           (select a.icon_url from apps a where a.publisher_id = p.id and a.status = 'published' and a.category <> ${ADULT} and a.icon_url is not null
              order by a.installs desc, a.published_at limit 1) as icon_url,
            count(*) over ()::int as total
     from publishers p ${where} ${order}
@@ -212,7 +243,7 @@ export async function listPublishers({ q, filter = 'all', sort = 'apps', limit =
            count(*) filter (where not p.claimable)::int as claimed,
            count(*) filter (where p.claimable)::int as imported,
            count(*) filter (where p.verified)::int as verified
-    from publishers p where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published')`;
+    from publishers p where exists (select 1 from apps a where a.publisher_id = p.id and a.status = 'published' and a.category <> ${ADULT})`;
   return {
     total: rows[0]?.total ?? 0,
     counts,

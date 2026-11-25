@@ -47,6 +47,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
+          // A page marked no-store (a member's view, anything in the Adult category) is never kept as an offline copy.
+          if (/no-store/i.test(res.headers.get('cache-control') ?? '')) return res;
           const copy = res.clone();
           caches.open(VERSION).then((c) => c.put(req, copy));
           return res;

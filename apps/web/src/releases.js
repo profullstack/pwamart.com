@@ -160,7 +160,7 @@ export async function follow({ kind, targetId, user = null, email = null, push =
 
 /** Turn each new release into deliveries for its app's and its publisher's followers. */
 export async function queueDeliveries(sql = db()) {
-  const releases = await sql`select r.id, r.app_id, a.publisher_id from app_releases r join apps a on a.id = r.app_id where r.notified_at is null and a.status = 'published' order by r.created_at limit 50`;
+  const releases = await sql`select r.id, r.app_id, a.publisher_id, a.category = 'adult' as adult from app_releases r join apps a on a.id = r.app_id where r.notified_at is null and a.status = 'published' order by r.created_at limit 50`;
   for (const r of releases) {
     await sql.begin(async (tx) => {
       const follows = await tx`
@@ -168,6 +168,9 @@ export async function queueDeliveries(sql = db()) {
         from follows f
         where f.confirmed_at is not null
           and ((f.target_kind = 'app' and f.target_id = ${r.app_id}) or (f.target_kind = 'publisher' and f.target_id = ${r.publisher_id}))
+          -- An adult listing's news goes only to members who follow that listing itself:
+          -- never to an email-only follower, and never through a publisher follow.
+          ${r.adult ? tx`and f.target_kind = 'app' and f.user_id is not null` : tx``}
         order by coalesce(f.user_id::text, lower(f.email), f.push_id::text), (f.target_kind = 'app') desc`;
       for (const f of follows) {
         if (f.user_id || f.email) await tx`insert into release_deliveries (release_id, follow_id, channel) values (${r.id}, ${f.id}, 'email') on conflict do nothing`;

@@ -1,4 +1,4 @@
-import { CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
+import { ADULT, ADULT_LABEL, CATEGORIES, CATEGORY_NAMES, PLANS, config } from './config.js';
 import { siteFooter } from './footer.js';
 import { publisherPosts } from './share-posts.js';
 import { claudeMcpLines, mcpConfig } from './collections.js';
@@ -50,7 +50,7 @@ export function layout({ title, description, path = '/', body, stats, head = '',
 <meta property="og:url" content="${e(url)}">
 <meta property="og:image" content="${e(config.siteUrl)}/icon-512.png">
 <meta name="twitter:card" content="summary">
-${noindex ? '<meta name="robots" content="noindex">' : ''}
+${noindex ? `<meta name="robots" content="${noindex === 'adult' ? 'noindex, nofollow' : 'noindex'}">` : ''}
 <meta name="theme-color" content="#f6f4ed" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101814" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -330,7 +330,12 @@ export function grid(apps, emptyText = 'No apps here yet.') {
   return `<div class="grid">${apps.map(card).join('')}</div>`;
 }
 
-function categoryChips(counts, active, keep = {}) {
+/** The one-line 18+ notice a member sees the first time they open the adult category in a session. */
+export const adultNote = (notice) => (notice ? `<p class="notice adult-notice" role="note" style="margin:0 0 16px;padding:10px 14px;border:1px solid currentColor;border-radius:10px;font-size:14px;max-width:max-content"><b>18+</b> ${e(notice)}</p>` : '');
+
+// `adult`: the reader is signed in, so the Adult (18+) entry is listed (last, and
+// even when empty). It is never in the chips an anonymous reader gets.
+function categoryChips(counts, active, keep = {}, adult = false) {
   const href = (category) => {
     const p = new URLSearchParams({ ...(category ? { category } : {}), ...keep });
     return p.size ? `/apps?${p}` : '/apps';
@@ -340,6 +345,7 @@ function categoryChips(counts, active, keep = {}) {
   ${CATEGORIES.filter(([slug]) => counts[slug] || slug === active)
     .map(([slug, name]) => `<a class="chip${slug === active ? ' on' : ''}" href="${e(href(slug))}">${e(name)} <small>${counts[slug] ?? 0}</small></a>`)
     .join('')}
+  ${adult ? `<a class="chip${active === ADULT ? ' on' : ''}" data-adult rel="nofollow" href="${e(href(ADULT))}">${e(ADULT_LABEL)} <small>${counts[ADULT] ?? 0}</small></a>` : ''}
 </div>`;
 }
 
@@ -358,7 +364,7 @@ function installBar() {
       </div>`;
 }
 
-export function homePage({ featured, top, fresh, counts, stats, features = {}, surfaces = {}, collections = [], karma = null }) {
+export function homePage({ featured, top, fresh, counts, stats, features = {}, surfaces = {}, collections = [], karma = null, adult = false }) {
   const tints = ['#e5eadb', '#f3e2d6', '#e1e6ee', '#efe6cf'];
   const body = `
 <div class="wrap">
@@ -402,7 +408,7 @@ export function homePage({ featured, top, fresh, counts, stats, features = {}, s
       : ''
   }
 
-  <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null)}
+  <section class="block"><div class="block-head"><h2>Categories</h2><a href="/apps">All apps →</a></div>${categoryChips(counts, null, {}, adult)}
     <div class="chips" style="margin-top:12px"><a class="chip" href="/apps?feature=offline">Works offline <small>${e(features.offline ?? 0)}</small></a>${['cli', 'mcp', 'api', 'desktop']
       .map((k) => `<a class="chip" href="/apps?surface=${k}">Has ${SURFACE_NAMES[k]} <small>${e(surfaces[k] ?? 0)}</small></a>`)
       .join('')}</div></section>
@@ -431,7 +437,7 @@ export function homePage({ featured, top, fresh, counts, stats, features = {}, s
 
 /* ------------------------------------------------------------- browse -- */
 
-export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null, feature = null, features = {}, surface = null, surfaces = {} }) {
+export function browsePage({ q, category, sort, list, counts, offset, limit, stats, publisher = null, feature = null, features = {}, surface = null, surfaces = {}, adult = false, notice = null }) {
   const base = publisher ? `Apps by ${publisher.name}` : q ? `“${q}”` : category ? CATEGORY_NAMES[category] ?? 'Apps' : 'All web apps';
   const offlineTitle = feature === 'offline' ? (q || category || publisher ? `${base} · works offline` : 'Web apps that work offline') : base;
   const title = surface && surface !== 'pwa' ? `${offlineTitle} · with ${{ cli: 'a CLI', api: 'an API', mcp: 'an MCP server' }[surface]}` : offlineTitle;
@@ -458,7 +464,8 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     <h1 style="font-size:clamp(34px,5vw,56px);margin:8px 0 10px">${e(title)}</h1>
     <p class="muted" style="font-size:13.5px;margin:0 0 18px">Tap ▲ on any app you like: +${ACTIONS.vote.points} karma a vote, up to ${ACTIONS.vote.daily} a day. Every ${perCredit()} karma is a free Featured week. <a href="/leaderboard#earn">How to earn</a></p>
     ${publisher ? `<div class="chips" style="margin-bottom:12px"><a class="chip on" href="/publishers/${e(publisher.slug)}">${e(publisher.name)}</a><a class="chip" href="/apps">✕ all publishers</a><a class="chip" href="/publishers">Browse publishers →</a></div>` : ''}
-    ${categoryChips(counts, category, keep)}
+    ${adultNote(notice)}
+    ${categoryChips(counts, category, keep, adult)}
     ${offlineChip}
     ${q ? '' : `<div class="chips" style="margin-top:12px">${sorts.map(([k, n]) => `<a class="chip${(sort || 'top') === k ? ' on' : ''}" href="/apps?${new URLSearchParams({ ...(category ? { category } : {}), ...(publisher ? { publisher: publisher.slug } : {}), ...(feature ? { feature } : {}), ...(surface ? { surface } : {}), sort: k })}">${n}</a>`).join('')}</div>`}
   </section>
@@ -469,7 +476,7 @@ export function browsePage({ q, category, sort, list, counts, offset, limit, sta
     ${offset + limit < list.total ? `<a class="btn" href="${e(qs(offset + limit))}">Next →</a>` : ''}
   </div>
 </div>`;
-  return layout({ title, path: feature ? `/apps?feature=${feature}` : surface ? `/apps?surface=${surface}` : '/apps', body, stats, noindex: Boolean(q) });
+  return layout({ title, path: category === ADULT ? `/apps?category=${ADULT}` : feature ? `/apps?feature=${feature}` : surface ? `/apps?surface=${surface}` : '/apps', body, stats, noindex: category === ADULT ? 'adult' : Boolean(q) });
 }
 
 /* ------------------------------------------------------------ details -- */
@@ -481,7 +488,7 @@ const SURFACE_ICONS = {
   bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg>',
 };
 
-export function appPage({ app, publisher, reviews, related, releases = [], comments = [], stats }) {
+export function appPage({ app, publisher, reviews, related, releases = [], comments = [], stats, notice = null }) {
   const start = safeUrl(app.start_url) || safeUrl(app.url);
   const host = (() => {
     try {
@@ -514,6 +521,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], comme
     ...(app.rating_count ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: app.rating, ratingCount: app.rating_count } } : {}),
   };
   const body = `<div class="wrap">
+  ${notice ? `<div style="padding-top:20px">${adultNote(notice)}</div>` : ''}
   <section class="app-head">
     ${icon(app, 'icon', 128)}
     <div>
@@ -624,7 +632,7 @@ export function appPage({ app, publisher, reviews, related, releases = [], comme
     path: `/apps/${app.slug}`,
     body,
     stats,
-    noindex: app.status !== 'published',
+    noindex: app.category === ADULT ? 'adult' : app.status !== 'published',
     head: `<link rel="alternate" type="application/rss+xml" title="${e(app.name)} releases" href="/apps/${e(app.slug)}/releases.xml"><script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
   });
 }
@@ -768,7 +776,7 @@ export function collectionPage({ col, summary, apps, stats }) {
 
 /* ---------------------------------------------------------- publisher -- */
 
-export function publisherPage({ publisher, list, stats }) {
+export function publisherPage({ publisher, list, stats, adult = false }) {
   const body = `<div class="wrap">
   <section class="block" style="padding-top:44px">
     <div style="display:flex;gap:18px;align-items:center">
@@ -784,7 +792,7 @@ export function publisherPage({ publisher, list, stats }) {
   </section>
   <section class="block" style="padding-top:0"><div class="block-head"><h2>${e(list.total)} app${list.total === 1 ? '' : 's'}</h2></div>${grid(list.apps, 'No published apps yet.')}</section>
 </div>`;
-  return layout({ title: publisher.name, path: `/publishers/${publisher.slug}`, body, stats });
+  return layout({ title: publisher.name, path: `/publishers/${publisher.slug}`, body, stats, noindex: adult ? 'adult' : false });
 }
 
 /* ------------------------------------------------------------- pricing -- */

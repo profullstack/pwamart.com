@@ -18,7 +18,7 @@ Browse
   pwamart install <slug> [--no-launch]   open it as an app window + add a launcher entry
   pwamart uninstall <slug>               remove the launcher entry
   pwamart open <slug>                    open in your default browser
-  pwamart categories
+  pwamart categories                     signed in, also lists adult (Adult 18+): search --category adult
   pwamart collections [slug] [--json]    agentic workflow collections + their one-command installs
   pwamart tui                            the store in your terminal (hqtui)
 

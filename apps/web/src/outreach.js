@@ -192,6 +192,7 @@ export async function claimTargets(sql = db()) {
     from publishers p
     left join apps a on a.publisher_id = p.id and a.status = 'published'
     where p.claimable and p.contact_email is not null
+      and not exists (select 1 from apps x where x.publisher_id = p.id and x.category = 'adult' and x.status <> 'removed')
     group by p.id
     order by p.created_at`;
   const out = new Map();
@@ -218,7 +219,7 @@ export async function ownerTargets(sql = db()) {
     from users u
     join org_members m on m.user_id = u.id and m.role in ('owner', 'admin')
     join publishers p on p.org_id = m.org_id and not p.claimable
-    join apps a on a.publisher_id = p.id and a.status in ('published', 'draft')
+    join apps a on a.publisher_id = p.id and a.status in ('published', 'draft') and a.category <> 'adult'
     where not u.is_admin`;
   const pubs = await sql`
     select distinct on (u.id, p.id) lower(u.email) as email, p.slug, p.name, p.avatar_url, p.bio
@@ -234,7 +235,7 @@ export async function ownerTargets(sql = db()) {
   const comments = await sql`
     select a.id as app_id, count(*)::int as n
     from app_comments c
-    join apps a on a.id = c.app_id
+    join apps a on a.id = c.app_id and a.category <> 'adult'
     join publishers p on p.id = a.publisher_id
     where c.parent_id is null and c.deleted_at is null and c.created_at > now() - interval '7 days'
       and not exists (select 1 from org_members m where m.org_id = p.org_id and m.user_id = c.user_id)
